@@ -23,7 +23,7 @@ namespace IOS::HLE::FS
 {
 class FileSystem;
 }
-namespace PowerPC
+namespace CPU
 {
 enum class CPUCore;
 }
@@ -33,7 +33,7 @@ namespace NetPlay
 struct NetSettings
 {
   bool cpu_thread = false;
-  PowerPC::CPUCore cpu_core{};
+  CPU::CPUCore cpu_core{};
   bool enable_cheats = false;
   bool enable_hardcore = false;
   int selected_language = 0;

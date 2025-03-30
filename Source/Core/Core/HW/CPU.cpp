@@ -25,21 +25,21 @@
 
 namespace CPU
 {
-CPUManager::CPUManager(Core::System& system) : m_system(system)
+CPUManager::CPUManager(Core::System& system, CPUNumber num) : m_cpu_number(num), m_system(system)
 {
 }
 CPUManager::~CPUManager() = default;
 
-void CPUManager::Init(PowerPC::CPUCore cpu_core)
+void CPUManager::Init(CPUCore cpu_core)
 {
-  m_system.GetPowerPC().Init(cpu_core);
+  m_system.GetCPUImpl(m_cpu_number)->Init(cpu_core);
   m_state = State::Stepping;
 }
 
 void CPUManager::Shutdown()
 {
   Stop();
-  m_system.GetPowerPC().Shutdown();
+  m_system.GetCPUImpl(m_cpu_number)->Shutdown();
 }
 
 // Requires holding m_state_change_lock
@@ -107,15 +107,18 @@ void CPUManager::StartTimePlayedTimer()
 
 void CPUManager::Run()
 {
-  auto& power_pc = m_system.GetPowerPC();
+  auto* core = m_system.GetCPUImpl(m_cpu_number);
 
   // Updating the host CPU's rounding mode must be done on the CPU thread.
   // We can't rely on PowerPC::Init doing it, since it's called from EmuThread.
-  PowerPC::RoundingModeUpdated(power_pc.GetPPCState());
+  if (core->GetPowerPC())
+  {
+    PowerPC::RoundingModeUpdated(core->GetPowerPC()->GetPPCState());
+  }
 
   // Start a separate time tracker thread
   std::thread timing;
-  if (Config::Get(Config::MAIN_TIME_TRACKING))
+  if (Config::Get(Config::MAIN_TIME_TRACKING) && m_cpu_number == CPUNumber::PPC0)
   {
     timing = std::thread(&CPUManager::StartTimePlayedTimer, this);
   }
@@ -125,7 +128,8 @@ void CPUManager::Run()
   {
     m_state_cpu_cvar.wait(state_lock, [this] { return !m_state_paused_and_locked; });
     ExecutePendingJobs(state_lock);
-    CPUThreadConfigCallback::CheckForConfigChanges();
+    if (m_cpu_number == CPUNumber::PPC0)
+      CPUThreadConfigCallback::CheckForConfigChanges();
 
     Common::Event gdb_step_sync_event;
     switch (m_state)
@@ -139,19 +143,23 @@ void CPUManager::Run()
       // work when the PC is at a breakpoint at the beginning of the block
       // Don't use PowerPCManager::CheckBreakPoints, otherwise you get double logging
       // If watchpoints are enabled, any instruction could be a breakpoint.
-      if (power_pc.GetBreakPoints().IsAddressBreakPoint(power_pc.GetPPCState().pc) ||
-          power_pc.GetMemChecks().HasAny())
+      if (core->GetPowerPC())
       {
-        m_state = State::Stepping;
-        PowerPC::CoreMode old_mode = power_pc.GetMode();
-        power_pc.SetMode(PowerPC::CoreMode::Interpreter);
-        power_pc.SingleStep();
-        power_pc.SetMode(old_mode);
-        m_state = State::Running;
+        auto& power_pc = *core->GetPowerPC();
+        if (power_pc.GetBreakPoints().IsAddressBreakPoint(core->GetPC()) ||
+            power_pc.GetMemChecks().HasAny())
+        {
+          m_state = State::Stepping;
+          CoreMode old_mode = power_pc.GetMode();
+          power_pc.SetMode(CoreMode::Interpreter);
+          power_pc.SingleStep();
+          power_pc.SetMode(old_mode);
+          m_state = State::Running;
+        }
       }
 
       // Enter a fast runloop
-      power_pc.RunLoop();
+      core->RunLoop();
 
       state_lock.lock();
       m_state_cpu_thread_active = false;
@@ -162,7 +170,9 @@ void CPUManager::Run()
       // Wait for step command.
       m_state_cpu_cvar.wait(state_lock, [this, &state_lock, &gdb_step_sync_event] {
         ExecutePendingJobs(state_lock);
-        CPUThreadConfigCallback::CheckForConfigChanges();
+        if (m_cpu_number == CPUNumber::PPC0)
+          CPUThreadConfigCallback::CheckForConfigChanges();
+
         state_lock.unlock();
         if (GDBStub::IsActive() && GDBStub::HasControl())
         {
@@ -199,7 +209,7 @@ void CPUManager::Run()
       m_state_cpu_thread_active = true;
       state_lock.unlock();
 
-      power_pc.SingleStep();
+      core->SingleStep();
 
       state_lock.lock();
       m_state_cpu_thread_active = false;
@@ -215,7 +225,7 @@ void CPUManager::Run()
     }
   }
 
-  if (timing.joinable())
+  if (m_cpu_number == CPUNumber::PPC0 && timing.joinable())
   {
     m_time_played_finish_sync.Set();
     timing.join();
@@ -228,11 +238,14 @@ void CPUManager::Run()
 // Requires holding m_state_change_lock
 void CPUManager::RunAdjacentSystems(bool running)
 {
-  // NOTE: We're assuming these will not try to call Break or SetStepping.
-  m_system.GetFifo().EmulatorState(running);
-  // Core is responsible for shutting down the sound stream.
-  if (m_state != State::PowerDown)
-    AudioCommon::SetSoundStreamRunning(m_system, running);
+  if (m_cpu_number == CPUNumber::PPC0)
+  {
+    // NOTE: We're assuming these will not try to call Break or SetStepping.
+    m_system.GetFifo().EmulatorState(running);
+    // Core is responsible for shutting down the sound stream.
+    if (m_state != State::PowerDown)
+      AudioCommon::SetSoundStreamRunning(m_system, running);
+  }
 }
 
 void CPUManager::Stop()
@@ -297,8 +310,8 @@ bool CPUManager::SetStateLocked(State s)
 {
   if (m_state == State::PowerDown)
     return false;
-  if (s == State::Stepping)
-    m_system.GetPowerPC().GetBreakPoints().ClearTemporary();
+  if (s == State::Stepping && GetPowerPC())
+    GetPowerPC()->GetBreakPoints().ClearTemporary();
   m_state = s;
   return true;
 }
@@ -322,7 +335,8 @@ void CPUManager::SetStepping(bool stepping)
   else if (SetStateLocked(State::Running))
   {
     m_state_cpu_cvar.notify_one();
-    m_time_played_finish_sync.Set();
+    if (m_cpu_number == CPUNumber::PPC0)
+      m_time_played_finish_sync.Set();
     RunAdjacentSystems(true);
   }
 }
@@ -348,7 +362,9 @@ void CPUManager::Break()
 void CPUManager::Continue()
 {
   SetStepping(false);
-  Core::CallOnStateChangedCallbacks(Core::State::Running);
+
+  if (m_cpu_number == CPUNumber::PPC0)
+    Core::CallOnStateChangedCallbacks(Core::State::Running);
 }
 
 bool CPUManager::PauseAndLock(bool do_lock, bool unpause_on_unlock, bool control_adjacent)
@@ -378,10 +394,10 @@ bool CPUManager::PauseAndLock(bool do_lock, bool unpause_on_unlock, bool control
 
     // NOTE: It would make more sense for Core::DeclareAsCPUThread() to keep a
     //   depth counter instead of being a boolean.
-    if (!Core::IsCPUThread())
+    if (!Core::IsCPUThread(m_cpu_number))
     {
       s_have_fake_cpu_thread = true;
-      Core::DeclareAsCPUThread();
+      Core::DeclareAsCPUThread(m_cpu_number);
     }
   }
   else
@@ -390,7 +406,7 @@ bool CPUManager::PauseAndLock(bool do_lock, bool unpause_on_unlock, bool control
     if (s_have_fake_cpu_thread)
     {
       s_have_fake_cpu_thread = false;
-      Core::UndeclareAsCPUThread();
+      Core::UndeclareAsCPUThread(m_cpu_number);
     }
 
     {
@@ -418,6 +434,65 @@ void CPUManager::AddCPUThreadJob(std::function<void()> function)
 {
   std::unique_lock state_lock(m_state_change_lock);
   m_pending_jobs.push(std::move(function));
+}
+
+CoreMode CPUManager::GetMode()
+{
+  auto* core = m_system.GetCPUImpl(m_cpu_number);
+  return core->GetMode();
+}
+
+void CPUManager::SetMode(CoreMode mode)
+{
+  auto* core = m_system.GetCPUImpl(m_cpu_number);
+  core->SetMode(mode);
+}
+
+PowerPC::PowerPCManager* CPUManager::GetPowerPC()
+{
+  auto* core = m_system.GetCPUImpl(m_cpu_number);
+  return core->GetPowerPC();
+}
+
+const PowerPC::PowerPCManager* CPUManager::GetPowerPC() const
+{
+  auto* core = m_system.GetCPUImpl(m_cpu_number);
+  return core->GetPowerPC();
+}
+
+IOS::LLE::ARMv5* CPUManager::GetARM9()
+{
+  auto* core = m_system.GetCPUImpl(CPUNumber::ARM9);
+  return core->GetARM9();
+}
+
+const IOS::LLE::ARMv5* CPUManager::GetARM9() const
+{
+  auto* core = m_system.GetCPUImpl(CPUNumber::ARM9);
+  return core->GetARM9();
+}
+
+u32 CPUManager::GetPC()
+{
+  auto* core = m_system.GetCPUImpl(m_cpu_number);
+  return core->GetPC();
+}
+
+void StopAllCPUs(Core::System& system)
+{
+  system.GetCPU(CPUNumber::PPC0).Stop();
+  system.GetCPU(CPUNumber::ARM9).Stop();
+}
+
+bool PauseAndLockAll(Core::System& system, bool do_lock, bool unpause_on_unlock,
+                     bool control_adjacent)
+{
+  bool was_unpaused = false;
+  was_unpaused |=
+      system.GetCPU(CPUNumber::PPC0).PauseAndLock(do_lock, unpause_on_unlock, control_adjacent);
+  was_unpaused |=
+      system.GetCPU(CPUNumber::ARM9).PauseAndLock(do_lock, unpause_on_unlock, control_adjacent);
+  return was_unpaused;
 }
 
 }  // namespace CPU

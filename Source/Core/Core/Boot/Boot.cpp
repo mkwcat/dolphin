@@ -579,7 +579,8 @@ bool CBoot::BootUp(Core::System& system, const Core::CPUThreadGuard& guard,
         // Because there is no TMD to get the requested system (IOS) version from,
         // we default to IOS58, which is the version used by the Homebrew Channel.
         SetupWiiMemory(system, IOS::HLE::IOSC::ConsoleType::Retail);
-        system.GetIOS()->BootIOS(Titles::IOS(58));
+        // system.GetIOS()->BootIOS(Titles::IOS(58));
+        system.GetIOS()->GetESDevice()->LaunchTitle(Titles::IOS(58), IOS::HLE::HangPPC::No);
 
         // The Apploader writes an IOS-like version number into memory.
         // Older versions of OSInit read it to check IOS compatibility.

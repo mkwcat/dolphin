@@ -51,6 +51,7 @@ void Init(Core::System& system, const Sram* override_sram)
   system.GetDVDInterface().Init();
   system.GetGPFifo().Init();
   system.GetCPU().Init(Config::Get(Config::MAIN_CPU_CORE));
+  system.GetCPU(CPU::CPUNumber::ARM9).Init(CPU::CPUCore::Interpreter);
   system.GetSystemTimers().Init();
 
   if (system.IsWii())

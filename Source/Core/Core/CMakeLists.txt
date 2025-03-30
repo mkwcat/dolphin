@@ -459,6 +459,13 @@ add_library(core
   IOS/WFS/WFSI.h
   IOS/WFS/WFSSRV.cpp
   IOS/WFS/WFSSRV.h
+  IOS_LLE/ARM_InstrInfo.cpp
+  IOS_LLE/ARM.cpp
+  IOS_LLE/ARMInterpreter_ALU.cpp
+  IOS_LLE/ARMInterpreter_Branch.cpp
+  IOS_LLE/ARMInterpreter_LoadStore.cpp
+  IOS_LLE/ARMInterpreter.cpp
+  IOS_LLE/CP15.cpp
   LibusbUtils.cpp
   LibusbUtils.h
   MemTools.cpp

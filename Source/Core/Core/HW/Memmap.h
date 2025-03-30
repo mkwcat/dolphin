@@ -76,6 +76,8 @@ public:
   u32 GetExRamSizeReal() const { return m_exram_size_real; }
   u32 GetExRamSize() const { return m_exram_size; }
   u32 GetExRamMask() const { return m_exram_mask; }
+  u32 GetIopSramSize() const { return m_iop_sram_size; }
+  u32 GetIopSramMask() const { return m_iop_sram_mask; }
 
   bool IsAddressInFastmemArea(const u8* address) const;
   u8* GetPhysicalBase() const { return m_physical_base; }
@@ -88,6 +90,7 @@ public:
   u8*& GetEXRAM() { return m_exram; }
   u8* GetL1Cache() { return m_l1_cache; }
   u8*& GetFakeVMEM() { return m_fake_vmem; }
+  u8*& GetIopSRAM() { return m_iop_sram; }
 
   MMIO::Mapping* GetMMIOMapping() const { return m_mmio_mapping.get(); }
 
@@ -175,6 +178,7 @@ private:
   u8* m_exram = nullptr;
   u8* m_l1_cache = nullptr;
   u8* m_fake_vmem = nullptr;
+  u8* m_iop_sram = nullptr;
 
   // m_ram_size is the amount allocated by the emulator, whereas m_ram_size_real
   // is what will be reported in lowmem, and thus used by emulated software.
@@ -193,6 +197,8 @@ private:
   u32 m_exram_size_real = 0;
   u32 m_exram_size = 0;
   u32 m_exram_mask = 0;
+  u32 m_iop_sram_size = 0;
+  u32 m_iop_sram_mask = 0;
 
   bool m_is_fastmem_arena_initialized = false;
 
@@ -207,7 +213,7 @@ private:
   // The MemArena class
   Common::MemArena m_arena;
 
-  // Dolphin allocates memory to represent four regions:
+  // Dolphin allocates memory to represent five regions:
   // - 32MB RAM (actually 24MB on hardware), available on GameCube and Wii
   // - 64MB "EXRAM", RAM only available on Wii
   // - 32MB FakeVMem, allocated in GameCube mode when MMU support is turned off.
@@ -217,6 +223,7 @@ private:
   // - 256KB Locked L1, to represent cache lines allocated out of the L1 data
   //   cache in Locked L1 mode.  Dolphin does not emulate this hardware feature
   //   accurately; it just pretends there is extra memory at 0xE0000000.
+  // - IOP (Starlet) SRAM, available at 0x0D400000 only on Wii.
   //
   // The 4GB starting at m_physical_base represents access from the CPU
   // with address translation turned off. (This is only used by the CPU;
@@ -226,6 +233,8 @@ private:
   // [0x02000000, 0x08000000) - Mirrors of 32MB RAM (not handled here)
   // [0x08000000, 0x0C000000) - EFB "mapping" (not handled here)
   // [0x0C000000, 0x0E000000) - MMIO etc. (not handled here)
+  // [0x0D400000, 0x0D420000) - IOP (Starlet) SRAM (Wii-only)
+  // [0x0D420000, 0x0D500000) - Mirrors of IOP SRAM (not handled here)
   // [0x10000000, 0x14000000) - 64MB RAM (Wii-only; slightly slower)
   // [0x7E000000, 0x80000000) - FakeVMEM
   // [0xE0000000, 0xE0040000) - 256KB locked L1
@@ -245,7 +254,7 @@ private:
   //
   // TODO: The actual size of RAM is 24MB; the other 8MB shouldn't be backed by actual memory.
   // TODO: Do we want to handle the mirrors of the GC RAM?
-  std::array<PhysicalMemoryRegion, 4> m_physical_regions{};
+  std::array<PhysicalMemoryRegion, 5> m_physical_regions{};
 
   std::vector<LogicalMemoryView> m_logical_mapped_entries;
 

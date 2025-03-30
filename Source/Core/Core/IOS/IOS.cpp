@@ -61,6 +61,7 @@
 #include "Core/PowerPC/PowerPC.h"
 #include "Core/System.h"
 #include "Core/WiiRoot.h"
+#include "Core/IOS_LLE/ARM.h"
 
 namespace IOS::HLE
 {
@@ -466,6 +467,9 @@ struct ARMBinary final
   u32 GetHeaderSize() const { return Common::swap32(m_bytes.data()); }
   u32 GetElfOffset() const { return Common::swap32(m_bytes.data() + 0x4); }
   u32 GetElfSize() const { return Common::swap32(m_bytes.data() + 0x8); }
+  u32 GetTotalSize() const { return m_bytes.size(); }
+
+  std::vector<u8> GetRawData() const { return std::vector<u8>(m_bytes.cbegin(), m_bytes.cend()); }
 
 private:
   std::vector<u8> m_bytes;
@@ -494,7 +498,7 @@ static constexpr SystemTimers::TimeBaseTick GetIOSBootTicks(u32 version)
 // to be installed at the moment. If one is passed, the boot binary must exist
 // on the NAND, or the call will fail like on a Wii.
 bool EmulationKernel::BootIOS(const u64 ios_title_id, HangPPC hang_ppc,
-                              const std::string& boot_content_path)
+                              const std::string& boot_content_path, bool ios_lle)
 {
   // IOS suspends regular PPC<->ARM IPC before loading a new IOS.
   // IPC is not resumed if the boot fails for any reason.
@@ -509,13 +513,43 @@ bool EmulationKernel::BootIOS(const u64 ios_title_id, HangPPC hang_ppc,
     if (!binary.IsValid())
       return false;
 
-    ElfReader elf{binary.GetElf()};
-    if (!elf.LoadIntoMemory(m_system, true))
-      return false;
+    if (ios_lle)
+    {
+      // IOS/Boot2 loads the ARM binary somewhere in MEM2, usually 0x00100000.
+      // TODO: Enable memory protection from PPC.
+      std::vector<u8> raw_data = binary.GetRawData();
+      m_system.GetMemory().CopyToEmu(0x10100000, raw_data.data(), raw_data.size());
+    }
+    else
+    {
+      ElfReader elf{binary.GetElf()};
+      if (!elf.LoadIntoMemory(m_system, true))
+        return false;
+    }
+  }
+  else if (ios_lle)
+  {
+    ERROR_LOG_FMT(IOS, "BootIOS: IOS-LLE without boot content is not supported");
+    return false;
   }
 
   if (hang_ppc == HangPPC::Yes)
     ResetAndPausePPC(m_system);
+
+  if (ios_lle)
+  {
+    // Shut down active IOS
+    m_system.SetIOS(nullptr);
+
+    // Start the ARM processor
+    auto& arm = m_system.GetARM9();
+    arm.Reset();
+    arm.CPSR = 0xF; // Set to system mode
+    arm.JumpTo(0x10100010, false);
+    arm.Running = true;
+
+    return true;
+  }
 
   if (Core::IsRunning(m_system))
   {

@@ -60,6 +60,7 @@
 #include "Core/HW/Wiimote.h"
 #include "Core/Host.h"
 #include "Core/IOS/IOS.h"
+#include "Core/IOS_LLE/ARM.h"
 #include "Core/MemTools.h"
 #include "Core/Movie.h"
 #include "Core/NetPlayClient.h"
@@ -104,6 +105,8 @@ static bool s_is_throttler_temp_disabled = false;
 static bool s_frame_step = false;
 static std::atomic<bool> s_stop_frame_step;
 
+static std::thread s_arm9_thread;
+
 // The value Paused is never stored in this variable. The core is considered to be in
 // the Paused state if this variable is Running and the CPU reports that it's stepping.
 static std::atomic<State> s_state = State::Uninitialized;
@@ -123,7 +126,7 @@ static std::mutex s_host_jobs_lock;
 static std::queue<HostJob> s_host_jobs_queue;
 static Common::Event s_cpu_thread_job_finished;
 
-static thread_local bool tls_is_cpu_thread = false;
+static thread_local bool tls_is_cpu_thread[16] = {};
 static thread_local bool tls_is_gpu_thread = false;
 static thread_local bool tls_is_host_thread = false;
 
@@ -199,9 +202,9 @@ bool IsUninitialized(Core::System& system)
   return s_state.load() == State::Uninitialized;
 }
 
-bool IsCPUThread()
+bool IsCPUThread(CPU::CPUNumber num)
 {
-  return tls_is_cpu_thread;
+  return tls_is_cpu_thread[static_cast<int>(num)];
 }
 
 bool IsGPUThread()
@@ -287,9 +290,9 @@ void Stop(Core::System& system)  // - Hammertime!
 
   INFO_LOG_FMT(CONSOLE, "Stop [Main Thread]\t\t---- Shutting down ----");
 
-  // Stop the CPU
-  INFO_LOG_FMT(CONSOLE, "{}", StopMessage(true, "Stop CPU"));
-  system.GetCPU().Stop();
+  // Stop CPUs
+  INFO_LOG_FMT(CONSOLE, "{}", StopMessage(true, "Stop CPU(s)"));
+  CPU::StopAllCPUs(system);
 
   if (system.IsDualCoreMode())
   {
@@ -302,14 +305,14 @@ void Stop(Core::System& system)  // - Hammertime!
   }
 }
 
-void DeclareAsCPUThread()
+void DeclareAsCPUThread(CPU::CPUNumber num)
 {
-  tls_is_cpu_thread = true;
+  tls_is_cpu_thread[static_cast<int>(num)] = true;
 }
 
-void UndeclareAsCPUThread()
+void UndeclareAsCPUThread(CPU::CPUNumber num)
 {
-  tls_is_cpu_thread = false;
+  tls_is_cpu_thread[static_cast<int>(num)] = false;
 }
 
 void DeclareAsGPUThread()
@@ -330,6 +333,16 @@ void DeclareAsHostThread()
 void UndeclareAsHostThread()
 {
   tls_is_host_thread = false;
+}
+
+void DeclareAsARM9Thread()
+{
+  DeclareAsCPUThread(CPU::CPUNumber::ARM9);
+}
+
+void UndeclareAsARM9Thread()
+{
+  UndeclareAsCPUThread(CPU::CPUNumber::ARM9);
 }
 
 // For the CPU Thread only.
@@ -461,6 +474,17 @@ static void FifoPlayerThread(Core::System& system, const std::optional<std::stri
   }
 }
 
+static void Arm9Thread(Core::System& system)
+{
+  DeclareAsARM9Thread();
+  Common::SetCurrentThreadName("IOS-LLE ARM9 thread");
+
+  system.GetCPU(CPU::CPUNumber::ARM9).Continue();
+
+  // Enter ARM9 run loop. When we leave it - we are done.
+  system.GetCPU(CPU::CPUNumber::ARM9).Run();
+}
+
 // Initialize and create emulation thread
 // Call browser: Init():s_emu_thread().
 // See the BootManager.cpp file description for a complete call schedule.
@@ -584,12 +608,13 @@ static void EmuThread(Core::System& system, std::unique_ptr<BootParameters> boot
 
   // Set execution state to known values (CPU/FIFO/Audio Paused)
   system.GetCPU().Break();
+  system.GetCPU(CPU::CPUNumber::ARM9).Break();
 
   // Load GCM/DOL/ELF whatever ... we boot with the interpreter core
   system.GetPowerPC().SetMode(PowerPC::CoreMode::Interpreter);
 
   // Determine the CPU thread function
-  void (*cpuThreadFunc)(Core::System & system, const std::optional<std::string>& savestate_path,
+  void (*cpuThreadFunc)(Core::System& system, const std::optional<std::string>& savestate_path,
                         bool delete_savestate);
   if (std::holds_alternative<BootParameters::DFF>(boot->parameters))
     cpuThreadFunc = FifoPlayerThread;
@@ -614,7 +639,7 @@ static void EmuThread(Core::System& system, std::unique_ptr<BootParameters> boot
     Core::CleanUpWiiFileSystemContents(boot_session_data);
     boot_session_data.InvokeWiiSyncCleanup();
   }};
-  if (system.IsWii())
+  if (system.IsWii() && !system.IsIOSLLE())
     Core::InitializeWiiFileSystemContents(savegame_redirect, boot_session_data);
   else
     wiifs_guard.Dismiss();
@@ -633,6 +658,12 @@ static void EmuThread(Core::System& system, std::unique_ptr<BootParameters> boot
   }
 
   UpdateTitle(system);
+
+  if (system.IsIOSLLE())
+  {
+    // Start the ARM9 thread
+    s_arm9_thread = std::thread(Arm9Thread, std::ref(system));
+  }
 
   // ENTER THE VIDEO THREAD LOOP
   if (system.IsDualCoreMode())
@@ -691,6 +722,7 @@ void SetState(Core::System& system, State state, bool report_state_change,
     // NOTE: GetState() will return State::Paused immediately, even before anything has
     //   stopped (including the CPU).
     system.GetCPU().SetStepping(true);  // Break
+    system.GetCPU(CPU::CPUNumber::ARM9).SetStepping(true);
     Wiimote::Pause();
     ResetRumble();
 #ifdef USE_RETRO_ACHIEVEMENTS
@@ -700,6 +732,7 @@ void SetState(Core::System& system, State state, bool report_state_change,
   case State::Running:
   {
     system.GetCPU().SetStepping(false);
+    system.GetCPU(CPU::CPUNumber::ARM9).SetStepping(false);
     Wiimote::Resume();
     break;
   }
@@ -783,7 +816,7 @@ static bool PauseAndLock(Core::System& system, bool do_lock, bool unpause_on_unl
     // first pause the CPU
     // This acquires a wrapper mutex and converts the current thread into
     // a temporary replacement CPU Thread.
-    was_unpaused = system.GetCPU().PauseAndLock(true);
+    was_unpaused = CPU::PauseAndLockAll(system, true);
   }
 
   // audio has to come after CPU, because CPU thread can wait for audio thread (m_throttle).
@@ -803,7 +836,7 @@ static bool PauseAndLock(Core::System& system, bool do_lock, bool unpause_on_unl
     // mechanism to unpause them. If we unpaused the systems above when releasing
     // the locks then they could call CPU::Break which would require detecting it
     // and re-pausing with CPU::SetStepping.
-    was_unpaused = system.GetCPU().PauseAndLock(false, unpause_on_unlock, true);
+    was_unpaused = CPU::PauseAndLockAll(system, false, unpause_on_unlock, true);
   }
 
   return was_unpaused;
@@ -1049,8 +1082,8 @@ void UpdateInputGate(bool require_focus, bool require_full_focus)
   ControlReference::SetInputGate(focus_passes && full_focus_passes);
 }
 
-CPUThreadGuard::CPUThreadGuard(Core::System& system)
-    : m_system(system), m_was_cpu_thread(IsCPUThread())
+CPUThreadGuard::CPUThreadGuard(Core::System& system, CPU::CPUNumber cpu_num)
+    : m_system(system), m_was_cpu_thread(IsCPUThread(cpu_num))
 {
   if (!m_was_cpu_thread)
     m_was_unpaused = PauseAndLock(system, true, true);

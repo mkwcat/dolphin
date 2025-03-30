@@ -370,14 +370,14 @@ bool ESDevice::LaunchIOS(u64 ios_title_id, HangPPC hang_ppc)
   // IOS checks whether the system title is installed and returns an error if it isn't.
   // Unfortunately, we can't rely on titles being installed as we don't require system titles,
   // so only have this check for MIOS (for which having the binary is *required*).
-  if (ios_title_id == Titles::MIOS)
+  if (ios_title_id == Titles::MIOS || true)
   {
     const ES::TMDReader tmd = m_core.FindInstalledTMD(ios_title_id);
     const ES::TicketReader ticket = m_core.FindSignedTicket(ios_title_id);
     ES::Content content;
     if (!tmd.IsValid() || !ticket.IsValid() || !tmd.GetContent(tmd.GetBootIndex(), &content) ||
         !GetEmulationKernel().BootIOS(ios_title_id, hang_ppc,
-                                      m_core.GetContentPath(ios_title_id, content)))
+                                      m_core.GetContentPath(ios_title_id, content), true))
     {
       PanicAlertFmtT("Could not launch IOS {0:016x} because it is missing from the NAND.\n"
                      "The emulated software will likely hang now.",

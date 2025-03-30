@@ -101,7 +101,7 @@ void SystemTimersManager::AudioDMACallback(Core::System& system, u64 userdata, s
 void SystemTimersManager::IPC_HLE_UpdateCallback(Core::System& system, u64 userdata,
                                                  s64 cycles_late)
 {
-  if (system.IsWii())
+  if (system.IsIOSHLE())
   {
     system.GetIOS()->UpdateDevices();
     auto& system_timers = system.GetSystemTimers();

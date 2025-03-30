@@ -112,6 +112,8 @@ public:
   virtual void VisitComplex(const std::function<void(Core::System&, u32, T)>* lambda) = 0;
 };
 
+using AccessCheckFunc = std::function<bool(Core::System&, u32, bool)>;
+
 // These classes are INTERNAL. Do not use outside of the MMIO implementation
 // code. Unfortunately, because we want to make Read() and Write() fast and
 // inlinable, we need to provide some of the implementation of these two
@@ -134,7 +136,7 @@ public:
 
   // Internal method called when changing the internal method object. Its
   // main role is to make sure the read function is updated at the same time.
-  void ResetMethod(ReadHandlingMethod<T>* method);
+  void ResetMethod(ReadHandlingMethod<T>* method, AccessCheckFunc access_check_func = nullptr);
 
 private:
   // Initialize this handler to an invalid handler. Done lazily to avoid
@@ -142,6 +144,7 @@ private:
   void InitializeInvalid();
   std::unique_ptr<ReadHandlingMethod<T>> m_Method;
   std::function<T(Core::System&, u32)> m_ReadFunc;
+  AccessCheckFunc m_AccessCheckFunc;
 };
 template <typename T>
 class WriteHandler
@@ -162,7 +165,7 @@ public:
   // Internal method called when changing the internal method object. Its
   // main role is to make sure the write function is updated at the same
   // time.
-  void ResetMethod(WriteHandlingMethod<T>* method);
+  void ResetMethod(WriteHandlingMethod<T>* method, AccessCheckFunc access_check_func = nullptr);
 
 private:
   // Initialize this handler to an invalid handler. Done lazily to avoid
@@ -170,6 +173,7 @@ private:
   void InitializeInvalid();
   std::unique_ptr<WriteHandlingMethod<T>> m_Method;
   std::function<void(Core::System&, u32, T)> m_WriteFunc;
+  AccessCheckFunc m_AccessCheckFunc;
 };
 
 // Boilerplate boilerplate boilerplate.

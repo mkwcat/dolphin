@@ -22,7 +22,7 @@
 #define BACKEND_OPENSLES "OpenSLES"
 #define BACKEND_WASAPI _trans("WASAPI (Exclusive Mode)")
 
-namespace PowerPC
+namespace CPU
 {
 enum class CPUCore;
 }
@@ -53,7 +53,7 @@ namespace Config
 // Main.Core
 
 extern const Info<bool> MAIN_SKIP_IPL;
-extern const Info<PowerPC::CPUCore> MAIN_CPU_CORE;
+extern const Info<CPU::CPUCore> MAIN_CPU_CORE;
 extern const Info<bool> MAIN_JIT_FOLLOW_BRANCH;
 extern const Info<bool> MAIN_FASTMEM;
 extern const Info<bool> MAIN_FASTMEM_ARENA;

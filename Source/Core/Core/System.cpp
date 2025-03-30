@@ -4,8 +4,10 @@
 #include "Core/System.h"
 
 #include <memory>
+#include <optional>
 
 #include "AudioCommon/SoundStream.h"
+#include "Common/Assert.h"
 #include "Core/Config/MainSettings.h"
 #include "Core/CoreTiming.h"
 #include "Core/FifoPlayer/FifoPlayer.h"
@@ -32,6 +34,7 @@
 #include "Core/PowerPC/PowerPC.h"
 #include "IOS/USB/Emulated/Infinity.h"
 #include "IOS/USB/Emulated/Skylanders/Skylander.h"
+#include "IOS_LLE/ARM.h"
 #include "VideoCommon/Assets/CustomAssetLoader.h"
 #include "VideoCommon/CommandProcessor.h"
 #include "VideoCommon/Fifo.h"
@@ -47,14 +50,16 @@ struct System::Impl
 {
   explicit Impl(System& system)
       : m_audio_interface(system), m_core_timing(system), m_command_processor{system},
-        m_cpu(system), m_dsp(system), m_dvd_interface(system), m_dvd_thread(system),
-        m_expansion_interface(system), m_fifo{system}, m_gp_fifo(system), m_wii_ipc(system),
-        m_memory(system), m_pixel_engine{system}, m_power_pc(system),
-        m_mmu(system, m_memory, m_power_pc), m_processor_interface(system),
-        m_serial_interface(system), m_system_timers(system), m_video_interface(system),
+        m_cpu(system), m_cpumgr_arm9(system, CPU::CPUNumber::ARM9), m_dsp(system),
+        m_dvd_interface(system), m_dvd_thread(system), m_expansion_interface(system),
+        m_fifo{system}, m_gp_fifo(system), m_wii_ipc(system), m_memory(system),
+        m_pixel_engine{system}, m_power_pc(system), m_mmu(system, m_memory, m_power_pc),
+        m_processor_interface(system), m_serial_interface(system), m_system_timers(system),
+        m_video_interface(system),
         m_interpreter(system, m_power_pc.GetPPCState(), m_mmu, m_power_pc.GetBranchWatch(),
                       m_power_pc.GetSymbolDB()),
-        m_jit_interface(system), m_fifo_player(system), m_fifo_recorder(system), m_movie(system)
+        m_jit_interface(system), m_fifo_player(system), m_fifo_recorder(system), m_movie(system),
+        m_arm{system, m_memory, {}, false}
   {
   }
 
@@ -68,6 +73,7 @@ struct System::Impl
   CoreTiming::CoreTimingManager m_core_timing;
   CommandProcessor::CommandProcessorManager m_command_processor;
   CPU::CPUManager m_cpu;
+  CPU::CPUManager m_cpumgr_arm9;
   DSP::DSPManager m_dsp;
   DVD::DVDInterface m_dvd_interface;
   DVD::DVDThread m_dvd_thread;
@@ -98,6 +104,9 @@ struct System::Impl
   FifoPlayer m_fifo_player;
   FifoRecorder m_fifo_recorder;
   Movie::MovieManager m_movie;
+  IOS::LLE::ARMv5 m_arm;
+
+  CPU::CPUNumber m_debugging_cpu = CPU::CPUNumber::ARM9;
 };
 
 System::System() : m_impl{std::make_unique<Impl>(*this)}
@@ -158,9 +167,33 @@ AudioInterface::AudioInterfaceManager& System::GetAudioInterface() const
   return m_impl->m_audio_interface;
 }
 
-CPU::CPUManager& System::GetCPU() const
+CPU::CPUManager& System::GetCPU(CPU::CPUNumber num) const
 {
-  return m_impl->m_cpu;
+  switch (num)
+  {
+  case CPU::CPUNumber::PPC0:
+    return m_impl->m_cpu;
+  case CPU::CPUNumber::ARM9:
+    return m_impl->m_cpumgr_arm9;
+
+  default:
+    DEBUG_ASSERT(false);
+    // Just return the default CPU for now.
+    return m_impl->m_cpu;
+  }
+}
+
+CPU::CPUManagerImplBase* System::GetCPUImpl(CPU::CPUNumber num) const
+{
+  switch (num)
+  {
+  case CPU::CPUNumber::PPC0:
+    return &m_impl->m_power_pc;
+  case CPU::CPUNumber::ARM9:
+    return &m_impl->m_arm;
+  default:
+    return nullptr;
+  }
 }
 
 CoreTiming::CoreTimingManager& System::GetCoreTiming() const
@@ -332,4 +365,20 @@ VideoCommon::CustomAssetLoader& System::GetCustomAssetLoader() const
 {
   return m_impl->m_custom_asset_loader;
 }
+
+IOS::LLE::ARMv5& System::GetARM9() const
+{
+  return m_impl->m_arm;
+}
+
+void System::SetDebuggingCPUNum(CPU::CPUNumber cpu)
+{
+  m_impl->m_debugging_cpu = cpu;
+}
+
+CPU::CPUNumber System::GetDebuggingCPUNum() const
+{
+  return m_impl->m_debugging_cpu;
+}
+
 }  // namespace Core

@@ -19,6 +19,11 @@
 struct BootParameters;
 struct WindowSystemInfo;
 
+namespace CPU
+{
+enum class CPUNumber;
+}  // namespace CPU
+
 namespace Core
 {
 class System;
@@ -101,7 +106,8 @@ enum class ConsoleType : u32
 class CPUThreadGuard final
 {
 public:
-  explicit CPUThreadGuard(Core::System& system);
+  explicit CPUThreadGuard(Core::System& system,
+                          CPU::CPUNumber num = static_cast<CPU::CPUNumber>(0));
   ~CPUThreadGuard();
 
   CPUThreadGuard(const CPUThreadGuard&) = delete;
@@ -121,8 +127,8 @@ bool Init(Core::System& system, std::unique_ptr<BootParameters> boot, const Wind
 void Stop(Core::System& system);
 void Shutdown(Core::System& system);
 
-void DeclareAsCPUThread();
-void UndeclareAsCPUThread();
+void DeclareAsCPUThread(CPU::CPUNumber num = static_cast<CPU::CPUNumber>(0));
+void UndeclareAsCPUThread(CPU::CPUNumber num = static_cast<CPU::CPUNumber>(0));
 void DeclareAsGPUThread();
 void UndeclareAsGPUThread();
 void DeclareAsHostThread();
@@ -137,7 +143,8 @@ bool IsRunningOrStarting(Core::System& system);
 // Returns true when GetState returns Uninitialized.
 bool IsUninitialized(Core::System& system);
 
-bool IsCPUThread();  // this tells us whether we are the CPU thread.
+bool IsCPUThread(CPU::CPUNumber num = static_cast<CPU::CPUNumber>(
+                     0));  // this tells us whether we are the CPU thread.
 bool IsGPUThread();
 bool IsHostThread();
 

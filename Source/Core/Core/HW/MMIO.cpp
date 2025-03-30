@@ -294,6 +294,12 @@ void ReadHandler<T>::Visit(ReadHandlingMethodVisitor<T>& visitor)
 template <typename T>
 T ReadHandler<T>::Read(Core::System& system, u32 addr)
 {
+  if (m_AccessCheckFunc && !m_AccessCheckFunc(system, addr, false))
+  {
+    ERROR_LOG_FMT(MEMMAP, "MMIO access denied for read at address {:08x}", addr);
+    return 0;
+  }
+
   // Check if the handler has already been initialized. For real
   // handlers, this will always be the case, so this branch should be
   // easily predictable.
@@ -304,7 +310,7 @@ T ReadHandler<T>::Read(Core::System& system, u32 addr)
 }
 
 template <typename T>
-void ReadHandler<T>::ResetMethod(ReadHandlingMethod<T>* method)
+void ReadHandler<T>::ResetMethod(ReadHandlingMethod<T>* method, AccessCheckFunc access_check_func)
 {
   m_Method.reset(method);
 
@@ -333,6 +339,7 @@ void ReadHandler<T>::ResetMethod(ReadHandlingMethod<T>* method)
   FuncCreatorVisitor v;
   Visit(v);
   m_ReadFunc = v.ret;
+  m_AccessCheckFunc = access_check_func;
 }
 
 template <typename T>
@@ -369,6 +376,12 @@ void WriteHandler<T>::Visit(WriteHandlingMethodVisitor<T>& visitor)
 template <typename T>
 void WriteHandler<T>::Write(Core::System& system, u32 addr, T val)
 {
+  if (m_AccessCheckFunc && !m_AccessCheckFunc(system, addr, true))
+  {
+    ERROR_LOG_FMT(MEMMAP, "MMIO access denied for write at address {:08x}", addr);
+    return;
+  }
+
   // Check if the handler has already been initialized. For real
   // handlers, this will always be the case, so this branch should be
   // easily predictable.
@@ -379,8 +392,10 @@ void WriteHandler<T>::Write(Core::System& system, u32 addr, T val)
 }
 
 template <typename T>
-void WriteHandler<T>::ResetMethod(WriteHandlingMethod<T>* method)
+void WriteHandler<T>::ResetMethod(WriteHandlingMethod<T>* method, 
+  AccessCheckFunc access_check_func)
 {
+  // Reset the method.
   m_Method.reset(method);
 
   struct FuncCreatorVisitor : public WriteHandlingMethodVisitor<T>
@@ -408,6 +423,7 @@ void WriteHandler<T>::ResetMethod(WriteHandlingMethod<T>* method)
   FuncCreatorVisitor v;
   Visit(v);
   m_WriteFunc = v.ret;
+  m_AccessCheckFunc = access_check_func;
 }
 
 template <typename T>

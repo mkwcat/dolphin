@@ -13,7 +13,7 @@ class CPUThreadGuard;
 class System;
 }  // namespace Core
 
-namespace PowerPC
+namespace CPU
 {
 enum class CoreMode;
 }
@@ -73,11 +73,11 @@ const char* GetHookNameByIndex(u32 index);
 HookType GetHookTypeByIndex(u32 index);
 HookFlag GetHookFlagsByIndex(u32 index);
 
-bool IsEnabled(HookFlag flag, PowerPC::CoreMode mode);
+bool IsEnabled(HookFlag flag, CPU::CoreMode mode);
 
 // Performs the backend-independent preliminary checking for whether a function
 // can be HLEd. If it can be, the information needed for HLEing it is returned.
 TryReplaceFunctionResult TryReplaceFunction(PPCSymbolDB& ppc_symbol_db, u32 address,
-                                            PowerPC::CoreMode mode);
+  CPU::CoreMode mode);
 
 }  // namespace HLE

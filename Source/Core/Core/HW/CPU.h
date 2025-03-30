@@ -8,6 +8,7 @@
 #include <mutex>
 #include <queue>
 
+#include "Common/ChunkFile.h"
 #include "Common/Event.h"
 
 namespace Common
@@ -20,7 +21,11 @@ class System;
 }
 namespace PowerPC
 {
-enum class CPUCore;
+class PowerPCManager;
+}
+namespace IOS::LLE
+{
+class ARMv5;
 }
 
 namespace CPU
@@ -32,10 +37,40 @@ enum class State
   PowerDown = 3
 };
 
+// The gaps in the CPUCore numbering are from cores that only existed in the past.
+// We avoid re-numbering cores so that settings will be compatible across versions.
+enum class CPUCore
+{
+  Interpreter = 0,
+  JIT64 = 1,
+  JITARM64 = 4,
+  CachedInterpreter = 5,
+};
+
+enum class CoreMode
+{
+  Interpreter,
+  JIT,
+};
+
+// The number of the emulated CPU.
+enum class CPUNumber
+{
+  // Must be 0 as it's the default
+  PPC0 = 0,
+  PPC1,
+  PPC2,
+  ARM9,
+};
+
+void StopAllCPUs(Core::System& system);
+bool PauseAndLockAll(Core::System& system, bool do_lock, bool unpause_on_unlock = true,
+                     bool control_adjacent = false);
+
 class CPUManager
 {
 public:
-  explicit CPUManager(Core::System& system);
+  explicit CPUManager(Core::System& system, CPUNumber num = CPUNumber::PPC0);
   CPUManager(const CPUManager& other) = delete;
   CPUManager(CPUManager&& other) = delete;
   CPUManager& operator=(const CPUManager& other) = delete;
@@ -43,7 +78,7 @@ public:
   ~CPUManager();
 
   // Init
-  void Init(PowerPC::CPUCore cpu_core);
+  void Init(CPUCore cpu_core);
 
   // Shutdown
   void Shutdown();
@@ -101,6 +136,16 @@ public:
   // PauseAndLock(), as while the CPU is in the run loop, it won't execute the function.
   void AddCPUThreadJob(std::function<void()> function);
 
+  CoreMode GetMode();
+  void SetMode(CoreMode mode);
+
+  PowerPC::PowerPCManager* GetPowerPC();
+  const PowerPC::PowerPCManager* GetPowerPC() const;
+  IOS::LLE::ARMv5* GetARM9();
+  const IOS::LLE::ARMv5* GetARM9() const;
+
+  u32 GetPC();
+
 private:
   void FlushStepSyncEventLocked();
   void ExecutePendingJobs(std::unique_lock<std::mutex>& state_lock);
@@ -112,6 +157,8 @@ private:
   // Requires m_state_change_lock to modify the value.
   // Read access is unsynchronized.
   State m_state = State::PowerDown;
+
+  CPUNumber m_cpu_number;
 
   // Synchronizes SetStepping and PauseAndLock so only one instance can be
   // active at a time. Simplifies code by eliminating several edge cases where
@@ -140,4 +187,40 @@ private:
 
   Core::System& m_system;
 };
+
+class CPUManagerImplBase
+{
+public:
+  virtual void Init([[maybe_unused]] CPUCore cpu_core) {}
+  virtual void Reset() = 0;
+  virtual void Shutdown() {}
+  virtual void DoState(PointerWrap& p) = 0;
+
+  virtual void ScheduleInvalidateCacheThreadSafe(u32 address) {}
+
+  virtual CoreMode GetMode() const = 0;
+  // [NOT THREADSAFE] CPU Thread or CPU::PauseAndLock or Core::State::Uninitialized
+  virtual void SetMode(CoreMode _coreType) = 0;
+  virtual const char* GetCPUName() const = 0;
+
+  // Stepping requires the CPU Execution lock (CPU::PauseAndLock or CPU Thread)
+  // It's not threadsafe otherwise.
+  virtual void SingleStep() = 0;
+  virtual void CheckExceptions() {}
+  virtual void CheckExternalExceptions() {}
+  // Evaluate the breakpoints in order to log. Returns whether it would break.
+  virtual bool CheckBreakPoints() { return false; }
+  // Evaluate the breakpoints in order to log and/or break. Returns whether it breaks.
+  virtual bool CheckAndHandleBreakPoints() { return false; }
+  virtual void RunLoop() = 0;
+
+  virtual u32 GetPC() = 0;
+
+  virtual PowerPC::PowerPCManager* GetPowerPC() { return nullptr; }
+  virtual const PowerPC::PowerPCManager* GetPowerPC() const { return nullptr; }
+
+  virtual IOS::LLE::ARMv5* GetARM9() { return nullptr; }
+  virtual const IOS::LLE::ARMv5* GetARM9() const { return nullptr; }
+};
+
 }  // namespace CPU

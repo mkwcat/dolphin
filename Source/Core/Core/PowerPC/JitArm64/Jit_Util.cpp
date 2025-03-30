@@ -335,6 +335,9 @@ void MMIOWriteRegToAddr(Core::System& system, MMIO::Mapping* mmio, ARM64XEmitter
 
   src_reg = ByteswapBeforeStore(emit, float_emit, ARM64Reg::W1, src_reg, flags, false);
 
+  // Emulate AHB privileged address masking here
+  address &= ~0x00800000;
+
   if (flags & BackPatchInfo::FLAG_SIZE_8)
   {
     MMIOWriteCodeGenerator<u8> gen(&system, emit, gprs_in_use, fprs_in_use, src_reg, address);

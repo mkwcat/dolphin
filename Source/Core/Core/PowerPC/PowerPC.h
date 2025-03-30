@@ -15,6 +15,7 @@
 #include "Core/CPUThreadConfigCallback.h"
 #include "Core/Debugger/BranchWatch.h"
 #include "Core/Debugger/PPCDebugInterface.h"
+#include "Core/HW/CPU.h"
 #include "Core/PowerPC/BreakPoints.h"
 #include "Core/PowerPC/ConditionRegister.h"
 #include "Core/PowerPC/Gekko.h"
@@ -30,21 +31,10 @@ struct EventType;
 
 namespace PowerPC
 {
-// The gaps in the CPUCore numbering are from cores that only existed in the past.
-// We avoid re-numbering cores so that settings will be compatible across versions.
-enum class CPUCore
-{
-  Interpreter = 0,
-  JIT64 = 1,
-  JITARM64 = 4,
-  CachedInterpreter = 5,
-};
 
-enum class CoreMode
-{
-  Interpreter,
-  JIT,
-};
+using CPUCore = CPU::CPUCore;
+
+using CoreMode = CPU::CoreMode;
 
 // TLB cache
 constexpr size_t TLB_SIZE = 128;
@@ -246,7 +236,7 @@ static_assert(offsetof(PowerPC::PowerPCState, above_fits_in_first_0x100) <= 0x10
 std::span<const CPUCore> AvailableCPUCores();
 CPUCore DefaultCPUCore();
 
-class PowerPCManager
+class PowerPCManager : public CPU::CPUManagerImplBase
 {
 public:
   explicit PowerPCManager(Core::System& system);
@@ -256,16 +246,16 @@ public:
   PowerPCManager& operator=(PowerPCManager&& other) = delete;
   ~PowerPCManager();
 
-  void Init(CPUCore cpu_core);
-  void Reset();
-  void Shutdown();
-  void DoState(PointerWrap& p);
-  void ScheduleInvalidateCacheThreadSafe(u32 address);
+  void Init(CPU::CPUCore cpu_core) override;
+  void Reset() override;
+  void Shutdown() override;
+  void DoState(PointerWrap& p) override;
+  void ScheduleInvalidateCacheThreadSafe(u32 address) override;
 
-  CoreMode GetMode() const;
+  CoreMode GetMode() const override;
   // [NOT THREADSAFE] CPU Thread or CPU::PauseAndLock or Core::State::Uninitialized
-  void SetMode(CoreMode _coreType);
-  const char* GetCPUName() const;
+  void SetMode(CoreMode _coreType) override;
+  const char* GetCPUName() const override;
 
   // Set the current CPU Core to the given implementation until removed.
   // Remove the current injected CPU Core by passing nullptr.
@@ -278,14 +268,14 @@ public:
 
   // Stepping requires the CPU Execution lock (CPU::PauseAndLock or CPU Thread)
   // It's not threadsafe otherwise.
-  void SingleStep();
-  void CheckExceptions();
-  void CheckExternalExceptions();
+  void SingleStep() override;
+  void CheckExceptions() override;
+  void CheckExternalExceptions() override;
   // Evaluate the breakpoints in order to log. Returns whether it would break.
-  bool CheckBreakPoints();
+  bool CheckBreakPoints() override;
   // Evaluate the breakpoints in order to log and/or break. Returns whether it breaks.
-  bool CheckAndHandleBreakPoints();
-  void RunLoop();
+  bool CheckAndHandleBreakPoints() override;
+  void RunLoop() override;
 
   u64 ReadFullTimeBaseValue() const;
   void WriteFullTimeBaseValue(u64 value);
@@ -302,6 +292,11 @@ public:
   const PPCSymbolDB& GetSymbolDB() const { return m_symbol_db; }
   Core::BranchWatch& GetBranchWatch() { return m_branch_watch; }
   const Core::BranchWatch& GetBranchWatch() const { return m_branch_watch; }
+
+  u32 GetPC() override { return m_ppc_state.pc; }
+
+  PowerPCManager* GetPowerPC() override { return this; }
+  const PowerPCManager* GetPowerPC() const override { return this; }
 
 private:
   void InitializeCPUCore(CPUCore cpu_core);

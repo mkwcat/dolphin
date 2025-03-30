@@ -25,7 +25,7 @@ namespace Core
 class CPUThreadGuard;
 class System;
 }  // namespace Core
-namespace PowerPC
+namespace CPU
 {
 enum class CPUCore;
 }
@@ -42,7 +42,7 @@ public:
 
   void DoState(PointerWrap& p);
 
-  CPUCoreBase* InitJitCore(PowerPC::CPUCore core);
+  CPUCoreBase* InitJitCore(CPU::CPUCore core);
   CPUCoreBase* GetCore() const;
 
   void UpdateMembase();

@@ -93,6 +93,8 @@ void MemoryManager::Init()
   m_exram_size_real = get_mem2_size();
   m_exram_size = MathUtil::NextPowerOf2(GetExRamSizeReal());
   m_exram_mask = GetExRamSize() - 1;
+  m_iop_sram_size = 0x00020000;
+  m_iop_sram_mask = m_iop_sram_size - 1;
 
   m_physical_regions[0] = PhysicalMemoryRegion{
       &m_ram, 0x00000000, GetRamSize(), PhysicalMemoryRegion::ALWAYS, 0, false};
@@ -102,6 +104,8 @@ void MemoryManager::Init()
       &m_fake_vmem, 0x7E000000, GetFakeVMemSize(), PhysicalMemoryRegion::FAKE_VMEM, 0, false};
   m_physical_regions[3] = PhysicalMemoryRegion{
       &m_exram, 0x10000000, GetExRamSize(), PhysicalMemoryRegion::WII_ONLY, 0, false};
+  m_physical_regions[4] = PhysicalMemoryRegion{
+      &m_iop_sram, 0x0D400000, GetIopSramSize(), PhysicalMemoryRegion::WII_ONLY, 0, false};
 
   const bool wii = m_system.IsWii();
   const bool mmu = m_system.IsMMUMode();

@@ -40,6 +40,7 @@ enum class LogType : int
   IOS_DI,
   IOS_ES,
   IOS_FS,
+  IOS_LLE,
   IOS_NET,
   IOS_SD,
   IOS_SSL,

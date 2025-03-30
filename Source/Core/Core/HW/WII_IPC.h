@@ -5,6 +5,7 @@
 
 #include "Common/BitUtils.h"
 #include "Common/CommonTypes.h"
+#include "Common/Flag.h"
 
 class PointerWrap;
 namespace Core
@@ -71,6 +72,44 @@ enum class GPIO : u32
   DEBUG7 = 0x800000,
 };
 
+enum class SRNPROT : u32
+{
+  AESEN = 0x1,
+  SHAEN = 0x2,
+  FLAEN = 0x4,
+  AHPEN = 0x8,
+  OH1EN = 0x10,
+  IOUEN = 0x20,
+  IOPDBGEN = 0x40,
+};
+
+enum class BUSPROT : u32
+{
+  PPCACREN = 0x1,  // ?
+  PPCFLAEN = 0x2,
+  PPCAESEN = 0x4,
+  PPCSHAEN = 0x8,
+  PPCEHCEN = 0x10,
+  PPCOH0EN = 0x20,
+  PPCOH1EN = 0x40,
+  PPCSD0EN = 0x80,
+  PPCSD1EN = 0x100,
+  PPCSREN = 0x400,
+  PPCAHMEN = 0x800,
+
+  IOPACREN = 0x10000,  // ?
+  IOPFLAEN = 0x20000,
+  IOAESEN = 0x40000,
+  IOSHAEN = 0x80000,
+  IOEHCEN = 0x100000,
+  IOOH0EN = 0x200000,
+  IOOH1EN = 0x400000,
+  IOSD0EN = 0x800000,
+  IOSD1EN = 0x1000000,
+
+  PPCKERN = 0x80000000,
+};
+
 struct CtrlRegister
 {
   u8 X1 : 1;
@@ -123,7 +162,9 @@ public:
   void Init();
   void Reset();
   void Shutdown();
+  void UpdateGPIO(Core::System& system);
   void DoState(PointerWrap& p);
+  static bool CheckBusAccess(Core::System& system, u32 addr, bool is_write);
 
   void RegisterMMIO(MMIO::Mapping* mmio, u32 base);
 
@@ -134,6 +175,8 @@ public:
   bool IsReady() const;
 
   Common::Flags<GPIO> GetGPIOOutFlags() const { return m_gpio_out; }
+  Common::Flags<SRNPROT> GetSRNPROTFlags() const { return m_srnprot; }
+  u32 GetSpare1() const { return m_spare1; }
 
 private:
   void InitState();
@@ -152,10 +195,26 @@ private:
 
   Common::Flags<GPIO> m_gpio_dir{};
   Common::Flags<GPIO> m_gpio_out{};
+  Common::Flags<GPIO> m_gpio_ppcowner{};
 
+  Common::Flags<SRNPROT> m_srnprot{};
+  Common::Flags<BUSPROT> m_busprot{};
+
+  u32 m_spare0 = 0;
+  u32 m_spare1 = 0;
+  u32 m_sysctrl = 0;
   u32 m_resets = 0;
 
   CoreTiming::EventType* m_event_type_update_interrupts = nullptr;
+
+  // The timer register is incremented every 1/128th of the core clock frequency, or around every
+  // 526.7 nanoseconds. It can be written to to reset to an arbitrary value.
+  u32 m_timer_base = 0;
+
+  // Real timestamp of the last time the timer value was set
+  u64 m_timer_base_time = {};
+
+  u32 m_alarm = 0;
 
   Core::System& m_system;
 };

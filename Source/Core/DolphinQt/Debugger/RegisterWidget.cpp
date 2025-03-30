@@ -15,6 +15,7 @@
 #include "Core/Core.h"
 #include "Core/Debugger/CodeTrace.h"
 #include "Core/HW/ProcessorInterface.h"
+#include "Core/IOS_LLE/ARM.h"
 #include "Core/PowerPC/PowerPC.h"
 #include "Core/System.h"
 #include "DolphinQt/Host.h"
@@ -303,7 +304,7 @@ void RegisterWidget::AutoStep(const std::string& reg) const
       return trace.AutoStepping(guard, true);
     }();
 
-    emit Host::GetInstance()->UpdateDisasmDialog();
+    emit Host::GetInstance() -> UpdateDisasmDialog();
 
     if (!results.timed_out)
       break;
@@ -316,25 +317,27 @@ void RegisterWidget::AutoStep(const std::string& reg) const
   }
 }
 
-void RegisterWidget::PopulateTable()
+void RegisterWidget::PopulateTablePowerPC(PowerPC::PowerPCManager& power_pc)
 {
+  auto& ppc_state = power_pc.GetPPCState();
+
   for (int i = 0; i < 32; i++)
   {
     // General purpose registers (int)
     AddRegister(
         i, 0, RegisterType::gpr, "r" + std::to_string(i),
-        [this, i] { return m_system.GetPPCState().gpr[i]; },
-        [this, i](u64 value) { m_system.GetPPCState().gpr[i] = value; });
+        [ppc_state, i] { return ppc_state.gpr[i]; },
+        [&ppc_state, i](u64 value) { ppc_state.gpr[i] = value; });
 
     // Floating point registers (double)
     AddRegister(
         i, 2, RegisterType::fpr, "f" + std::to_string(i),
-        [this, i] { return m_system.GetPPCState().ps[i].PS0AsU64(); },
-        [this, i](u64 value) { m_system.GetPPCState().ps[i].SetPS0(value); });
+        [ppc_state, i] { return ppc_state.ps[i].PS0AsU64(); },
+        [&ppc_state, i](u64 value) { ppc_state.ps[i].SetPS0(value); });
 
     AddRegister(
-        i, 4, RegisterType::fpr, "", [this, i] { return m_system.GetPPCState().ps[i].PS1AsU64(); },
-        [this, i](u64 value) { m_system.GetPPCState().ps[i].SetPS1(value); });
+        i, 4, RegisterType::fpr, "", [ppc_state, i] { return ppc_state.ps[i].PS1AsU64(); },
+        [&ppc_state, i](u64 value) { ppc_state.ps[i].SetPS1(value); });
   }
 
   // The IBAT and DBAT registers have a large gap between
@@ -345,16 +348,14 @@ void RegisterWidget::PopulateTable()
     // IBAT registers
     AddRegister(
         i, 5, RegisterType::ibat, "IBAT" + std::to_string(i),
-        [this, i] {
-          const auto& ppc_state = m_system.GetPPCState();
+        [ppc_state, i] {
           return (static_cast<u64>(ppc_state.spr[SPR_IBAT0U + i * 2]) << 32) +
                  ppc_state.spr[SPR_IBAT0L + i * 2];
         },
         nullptr);
     AddRegister(
         i + 4, 5, RegisterType::ibat, "IBAT" + std::to_string(4 + i),
-        [this, i] {
-          const auto& ppc_state = m_system.GetPPCState();
+        [ppc_state, i] {
           return (static_cast<u64>(ppc_state.spr[SPR_IBAT4U + i * 2]) << 32) +
                  ppc_state.spr[SPR_IBAT4L + i * 2];
         },
@@ -363,16 +364,14 @@ void RegisterWidget::PopulateTable()
     // DBAT registers
     AddRegister(
         i + 8, 5, RegisterType::dbat, "DBAT" + std::to_string(i),
-        [this, i] {
-          const auto& ppc_state = m_system.GetPPCState();
+        [ppc_state, i] {
           return (static_cast<u64>(ppc_state.spr[SPR_DBAT0U + i * 2]) << 32) +
                  ppc_state.spr[SPR_DBAT0L + i * 2];
         },
         nullptr);
     AddRegister(
         i + 12, 5, RegisterType::dbat, "DBAT" + std::to_string(4 + i),
-        [this, i] {
-          const auto& ppc_state = m_system.GetPPCState();
+        [ppc_state, i] {
           return (static_cast<u64>(ppc_state.spr[SPR_DBAT4U + i * 2]) << 32) +
                  ppc_state.spr[SPR_DBAT4L + i * 2];
         },
@@ -384,30 +383,30 @@ void RegisterWidget::PopulateTable()
     // Graphics quantization registers
     AddRegister(
         i + 16, 7, RegisterType::gqr, "GQR" + std::to_string(i),
-        [this, i] { return m_system.GetPPCState().spr[SPR_GQR0 + i]; }, nullptr);
+        [ppc_state, i] { return ppc_state.spr[SPR_GQR0 + i]; }, nullptr);
   }
 
   // HID registers
   AddRegister(
-      24, 7, RegisterType::hid, "HID0", [this] { return m_system.GetPPCState().spr[SPR_HID0]; },
-      [this](u64 value) { m_system.GetPPCState().spr[SPR_HID0] = static_cast<u32>(value); });
+      24, 7, RegisterType::hid, "HID0", [ppc_state] { return ppc_state.spr[SPR_HID0]; },
+      [&ppc_state](u64 value) { ppc_state.spr[SPR_HID0] = static_cast<u32>(value); });
   AddRegister(
-      25, 7, RegisterType::hid, "HID1", [this] { return m_system.GetPPCState().spr[SPR_HID1]; },
-      [this](u64 value) { m_system.GetPPCState().spr[SPR_HID1] = static_cast<u32>(value); });
+      25, 7, RegisterType::hid, "HID1", [ppc_state] { return ppc_state.spr[SPR_HID1]; },
+      [&ppc_state](u64 value) { ppc_state.spr[SPR_HID1] = static_cast<u32>(value); });
   AddRegister(
-      26, 7, RegisterType::hid, "HID2", [this] { return m_system.GetPPCState().spr[SPR_HID2]; },
-      [this](u64 value) { m_system.GetPPCState().spr[SPR_HID2] = static_cast<u32>(value); });
+      26, 7, RegisterType::hid, "HID2", [ppc_state] { return ppc_state.spr[SPR_HID2]; },
+      [&ppc_state](u64 value) { ppc_state.spr[SPR_HID2] = static_cast<u32>(value); });
   AddRegister(
-      27, 7, RegisterType::hid, "HID4", [this] { return m_system.GetPPCState().spr[SPR_HID4]; },
-      [this](u64 value) { m_system.GetPPCState().spr[SPR_HID4] = static_cast<u32>(value); });
+      27, 7, RegisterType::hid, "HID4", [ppc_state] { return ppc_state.spr[SPR_HID4]; },
+      [&ppc_state](u64 value) { ppc_state.spr[SPR_HID4] = static_cast<u32>(value); });
 
   for (int i = 0; i < 16; i++)
   {
     // SR registers
     AddRegister(
         i, 7, RegisterType::sr, "SR" + std::to_string(i),
-        [this, i] { return m_system.GetPPCState().sr[i]; },
-        [this, i](u64 value) { m_system.GetPPCState().sr[i] = value; });
+        [ppc_state, i] { return ppc_state.sr[i]; },
+        [&ppc_state, i](u64 value) { ppc_state.sr[i] = value; });
   }
 
   // Special registers
@@ -418,55 +417,54 @@ void RegisterWidget::PopulateTable()
 
   // PC
   AddRegister(
-      17, 5, RegisterType::pc, "PC", [this] { return m_system.GetPPCState().pc; },
-      [this](u64 value) { m_system.GetPPCState().pc = value; });
+      17, 5, RegisterType::pc, "PC", [ppc_state] { return ppc_state.pc; },
+      [&ppc_state](u64 value) { ppc_state.pc = value; });
 
   // LR
   AddRegister(
-      18, 5, RegisterType::lr, "LR", [this] { return m_system.GetPPCState().spr[SPR_LR]; },
-      [this](u64 value) { m_system.GetPPCState().spr[SPR_LR] = value; });
+      18, 5, RegisterType::lr, "LR", [ppc_state] { return ppc_state.spr[SPR_LR]; },
+      [&ppc_state](u64 value) { ppc_state.spr[SPR_LR] = value; });
 
   // CTR
   AddRegister(
-      19, 5, RegisterType::ctr, "CTR", [this] { return m_system.GetPPCState().spr[SPR_CTR]; },
-      [this](u64 value) { m_system.GetPPCState().spr[SPR_CTR] = value; });
+      19, 5, RegisterType::ctr, "CTR", [ppc_state] { return ppc_state.spr[SPR_CTR]; },
+      [&ppc_state](u64 value) { ppc_state.spr[SPR_CTR] = value; });
 
   // CR
   AddRegister(
-      20, 5, RegisterType::cr, "CR", [this] { return m_system.GetPPCState().cr.Get(); },
-      [this](u64 value) { m_system.GetPPCState().cr.Set(value); });
+      20, 5, RegisterType::cr, "CR", [ppc_state] { return ppc_state.cr.Get(); },
+      [&ppc_state](u64 value) { ppc_state.cr.Set(value); });
 
   // XER
   AddRegister(
-      21, 5, RegisterType::xer, "XER", [this] { return m_system.GetPPCState().GetXER().Hex; },
-      [this](u64 value) { m_system.GetPPCState().SetXER(UReg_XER(value)); });
+      21, 5, RegisterType::xer, "XER", [ppc_state] { return ppc_state.GetXER().Hex; },
+      [&ppc_state](u64 value) { ppc_state.SetXER(UReg_XER(value)); });
 
   // FPSCR
   AddRegister(
-      22, 5, RegisterType::fpscr, "FPSCR", [this] { return m_system.GetPPCState().fpscr.Hex; },
-      [this](u64 value) { m_system.GetPPCState().fpscr = static_cast<u32>(value); });
+      22, 5, RegisterType::fpscr, "FPSCR", [ppc_state] { return ppc_state.fpscr.Hex; },
+      [&ppc_state](u64 value) { ppc_state.fpscr = static_cast<u32>(value); });
 
   // MSR
   AddRegister(
-      23, 5, RegisterType::msr, "MSR", [this] { return m_system.GetPPCState().msr.Hex; },
-      [this](u64 value) {
-        m_system.GetPPCState().msr.Hex = value;
-        PowerPC::MSRUpdated(m_system.GetPPCState());
+      23, 5, RegisterType::msr, "MSR", [ppc_state] { return ppc_state.msr.Hex; },
+      [&ppc_state](u64 value) {
+        ppc_state.msr.Hex = value;
+        PowerPC::MSRUpdated(ppc_state);
       });
 
   // SRR 0-1
   AddRegister(
-      24, 5, RegisterType::srr, "SRR0", [this] { return m_system.GetPPCState().spr[SPR_SRR0]; },
-      [this](u64 value) { m_system.GetPPCState().spr[SPR_SRR0] = value; });
+      24, 5, RegisterType::srr, "SRR0", [ppc_state] { return ppc_state.spr[SPR_SRR0]; },
+      [&ppc_state](u64 value) { ppc_state.spr[SPR_SRR0] = value; });
   AddRegister(
-      25, 5, RegisterType::srr, "SRR1", [this] { return m_system.GetPPCState().spr[SPR_SRR1]; },
-      [this](u64 value) { m_system.GetPPCState().spr[SPR_SRR1] = value; });
+      25, 5, RegisterType::srr, "SRR1", [ppc_state] { return ppc_state.spr[SPR_SRR1]; },
+      [&ppc_state](u64 value) { ppc_state.spr[SPR_SRR1] = value; });
 
   // Exceptions
   AddRegister(
-      26, 5, RegisterType::exceptions, "Exceptions",
-      [this] { return m_system.GetPPCState().Exceptions; },
-      [this](u64 value) { m_system.GetPPCState().Exceptions = value; });
+      26, 5, RegisterType::exceptions, "Exceptions", [ppc_state] { return ppc_state.Exceptions; },
+      [&ppc_state](u64 value) { ppc_state.Exceptions = value; });
 
   // Int Mask
   AddRegister(
@@ -480,24 +478,49 @@ void RegisterWidget::PopulateTable()
 
   // DSISR
   AddRegister(
-      29, 5, RegisterType::dsisr, "DSISR", [this] { return m_system.GetPPCState().spr[SPR_DSISR]; },
-      [this](u64 value) { m_system.GetPPCState().spr[SPR_DSISR] = value; });
+      29, 5, RegisterType::dsisr, "DSISR", [ppc_state] { return ppc_state.spr[SPR_DSISR]; },
+      [&ppc_state](u64 value) { ppc_state.spr[SPR_DSISR] = value; });
   // DAR
   AddRegister(
-      30, 5, RegisterType::dar, "DAR", [this] { return m_system.GetPPCState().spr[SPR_DAR]; },
-      [this](u64 value) { m_system.GetPPCState().spr[SPR_DAR] = value; });
+      30, 5, RegisterType::dar, "DAR", [ppc_state] { return ppc_state.spr[SPR_DAR]; },
+      [&ppc_state](u64 value) { ppc_state.spr[SPR_DAR] = value; });
 
   // Hash Mask
   AddRegister(
       31, 5, RegisterType::pt_hashmask, "Hash Mask",
-      [this] {
-        const auto& ppc_state = m_system.GetPPCState();
-        return (ppc_state.pagetable_hashmask << 6) | ppc_state.pagetable_base;
-      },
+      [ppc_state] { return (ppc_state.pagetable_hashmask << 6) | ppc_state.pagetable_base; },
       nullptr);
 
   emit RequestTableUpdate();
   m_table->resizeColumnsToContents();
+}
+
+void RegisterWidget::PopulateTableARM9(IOS::LLE::ARMv5& arm)
+{
+  // TODO: Other registers
+  for (int i = 0; i < 16; i++)
+  {
+    // General purpose registers (int)
+    AddRegister(
+        i, 0, RegisterType::gpr, "r" + std::to_string(i), [arm, i] { return arm.R[i]; },
+        [&arm, i](u64 value) { arm.R[i] = value; });
+  }
+}
+
+void RegisterWidget::PopulateTable()
+{
+  auto& cpu = m_system.GetCPU(m_system.GetDebuggingCPUNum());
+
+  if (cpu.GetPowerPC())
+  {
+    auto& power_pc = *cpu.GetPowerPC();
+    PopulateTablePowerPC(power_pc);
+  }
+  else if (cpu.GetARM9())
+  {
+    auto& arm = *cpu.GetARM9();
+    PopulateTableARM9(arm);
+  }
 }
 
 void RegisterWidget::AddRegister(int row, int column, RegisterType type, std::string register_name,

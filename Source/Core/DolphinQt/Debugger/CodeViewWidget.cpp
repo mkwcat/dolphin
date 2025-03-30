@@ -274,7 +274,7 @@ void CodeViewWidget::Update()
 
   if (Core::GetState(m_system) == Core::State::Paused)
   {
-    Core::CPUThreadGuard guard(m_system);
+    Core::CPUThreadGuard guard(m_system, m_system.GetDebuggingCPUNum());
     Update(&guard);
   }
   else
@@ -309,11 +309,13 @@ void CodeViewWidget::Update(const Core::CPUThreadGuard* guard)
   for (int i = 0; i < rows; i++)
     setRowHeight(i, rowh);
 
-  auto& power_pc = m_system.GetPowerPC();
-  auto& debug_interface = power_pc.GetDebugInterface();
+  auto& main_power_pc = m_system.GetPowerPC();
+  auto& debug_interface = main_power_pc.GetDebugInterface();
+
+  auto& cpu = m_system.GetCPU(m_system.GetDebuggingCPUNum());
 
   const std::optional<u32> pc =
-      guard ? std::make_optional(power_pc.GetPPCState().pc) : std::nullopt;
+      guard ? std::make_optional(cpu.GetPC()) : std::nullopt;
 
   const bool dark_theme = Settings::Instance().IsThemeDark();
 
@@ -386,7 +388,7 @@ void CodeViewWidget::Update(const Core::CPUThreadGuard* guard)
     if (ins == "blr")
       ins_item->setForeground(dark_theme ? QColor(0xa0FFa0) : Qt::darkGreen);
 
-    const TBreakPoint* bp = power_pc.GetBreakPoints().GetRegularBreakpoint(addr);
+    const TBreakPoint* bp = main_power_pc.GetBreakPoints().GetRegularBreakpoint(addr);
     if (bp != nullptr)
     {
       auto icon = Resources::GetThemeIcon("debugger_breakpoint").pixmap(QSize(rowh - 2, rowh - 2));

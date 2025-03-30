@@ -23,11 +23,17 @@
 #include "Core/Debugger/OSThread.h"
 #include "Core/HW/CPU.h"
 #include "Core/HW/DSP.h"
+#include "Core/IOS_LLE/ARM.h"
 #include "Core/PatchEngine.h"
 #include "Core/PowerPC/MMU.h"
 #include "Core/PowerPC/PPCSymbolDB.h"
 #include "Core/PowerPC/PowerPC.h"
 #include "Core/System.h"
+
+static CPU::CPUManager& GetDebugCPU(const Core::CPUThreadGuard& guard)
+{
+  return guard.GetSystem().GetCPU(guard.GetSystem().GetDebuggingCPUNum());
+}
 
 void ApplyMemoryPatch(const Core::CPUThreadGuard& guard, Common::Debug::MemoryPatch& patch,
                       bool store_existing_value)
@@ -280,26 +286,32 @@ std::string PPCDebugInterface::Disassemble(const Core::CPUThreadGuard* guard, u3
 {
   if (guard)
   {
-    if (!PowerPC::MMU::HostIsRAMAddress(*guard, address))
+    auto& cpu = GetDebugCPU(*guard);
+    if (cpu.GetPowerPC())
     {
-      return "(No RAM here)";
+      if (!PowerPC::MMU::HostIsRAMAddress(*guard, address))
+      {
+        return "(No RAM here)";
+      }
+
+      const u32 op = PowerPC::MMU::HostRead_Instruction(*guard, address);
+      std::string disasm = Common::GekkoDisassembler::Disassemble(op, address);
+      const UGeckoInstruction inst{op};
+
+      if (inst.OPCD == 1)
+      {
+        disasm += " (hle)";
+      }
+
+      return disasm;
     }
-
-    const u32 op = PowerPC::MMU::HostRead_Instruction(*guard, address);
-    std::string disasm = Common::GekkoDisassembler::Disassemble(op, address);
-    const UGeckoInstruction inst{op};
-
-    if (inst.OPCD == 1)
+    else if (cpu.GetARM9())
     {
-      disasm += " (hle)";
+      return GetRawMemoryString(*guard, 0, address);
     }
+  }
 
-    return disasm;
-  }
-  else
-  {
-    return "<unknown>";
-  }
+  return "<unknown>";
 }
 
 std::string PPCDebugInterface::GetRawMemoryString(const Core::CPUThreadGuard& guard, int memory,
@@ -307,9 +319,12 @@ std::string PPCDebugInterface::GetRawMemoryString(const Core::CPUThreadGuard& gu
 {
   if (IsAlive())
   {
+    auto& cpu = GetDebugCPU(guard);
+
     const bool is_aram = memory != 0;
 
-    if (is_aram || PowerPC::MMU::HostIsRAMAddress(guard, address))
+    if ((cpu.GetARM9() && cpu.GetARM9()->HostIsRAMAddress(address)) || is_aram ||
+        PowerPC::MMU::HostIsRAMAddress(guard, address))
     {
       return fmt::format("{:08X}{}", ReadExtraMemory(guard, memory, address),
                          is_aram ? " (ARAM)" : "");
@@ -323,12 +338,22 @@ std::string PPCDebugInterface::GetRawMemoryString(const Core::CPUThreadGuard& gu
 
 u32 PPCDebugInterface::ReadMemory(const Core::CPUThreadGuard& guard, u32 address) const
 {
-  return PowerPC::MMU::HostRead_U32(guard, address);
+  auto& cpu = GetDebugCPU(guard);
+  if (cpu.GetPowerPC())
+    return PowerPC::MMU::HostRead_U32(guard, address);
+  else if (cpu.GetARM9())
+    return cpu.GetARM9()->HostRead_U32(address);
+
+  return 0;
 }
 
 u32 PPCDebugInterface::ReadExtraMemory(const Core::CPUThreadGuard& guard, int memory,
                                        u32 address) const
 {
+  auto& cpu = GetDebugCPU(guard);
+  if (cpu.GetARM9())
+    return cpu.GetARM9()->HostRead_U32(address);
+
   switch (memory)
   {
   case 0:
@@ -346,7 +371,13 @@ u32 PPCDebugInterface::ReadExtraMemory(const Core::CPUThreadGuard& guard, int me
 
 u32 PPCDebugInterface::ReadInstruction(const Core::CPUThreadGuard& guard, u32 address) const
 {
-  return PowerPC::MMU::HostRead_Instruction(guard, address);
+  auto& cpu = GetDebugCPU(guard);
+  if (cpu.GetPowerPC())
+    return PowerPC::MMU::HostRead_Instruction(guard, address);
+  else if (cpu.GetARM9())
+    return cpu.GetARM9()->HostRead_Instruction(address);
+
+  return 0;
 }
 
 bool PPCDebugInterface::IsAlive() const
@@ -418,7 +449,11 @@ u32 PPCDebugInterface::GetColor(const Core::CPUThreadGuard* guard, u32 address) 
 {
   if (!guard || !IsAlive())
     return 0xFFFFFF;
-  if (!PowerPC::MMU::HostIsRAMAddress(*guard, address))
+
+  auto& cpu = GetDebugCPU(*guard);
+  if (cpu.GetPowerPC() && !PowerPC::MMU::HostIsRAMAddress(*guard, address))
+    return 0xeeeeee;
+  else if (cpu.GetARM9() && !cpu.GetARM9()->HostIsRAMAddress(address))
     return 0xeeeeee;
 
   const Common::Symbol* const symbol = m_ppc_symbol_db.GetSymbolFromAddr(address);

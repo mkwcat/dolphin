@@ -20,8 +20,10 @@ class AudioInterfaceManager;
 }
 namespace CPU
 {
+enum class CPUNumber;
 class CPUManager;
-}
+class CPUManagerImplBase;
+}  // namespace CPU
 namespace CommandProcessor
 {
 class CommandProcessorManager;
@@ -56,6 +58,10 @@ class GPFifoManager;
 namespace IOS::HLE
 {
 class EmulationKernel;
+}
+namespace IOS::LLE
+{
+class ARMv5;
 }
 namespace HSP
 {
@@ -158,8 +164,13 @@ public:
   IOS::HLE::EmulationKernel* GetIOS() const;
   void SetIOS(std::unique_ptr<IOS::HLE::EmulationKernel> ios);
 
+  bool IsIOSLLE() const { return true; }
+  bool IsIOSHLE() const { return false; }
+
   AudioInterface::AudioInterfaceManager& GetAudioInterface() const;
-  CPU::CPUManager& GetCPU() const;
+  // TODO: Use a pointer
+  CPU::CPUManager& GetCPU(CPU::CPUNumber num = static_cast<CPU::CPUNumber>(0)) const;
+  CPU::CPUManagerImplBase* GetCPUImpl(CPU::CPUNumber num) const;
   CoreTiming::CoreTimingManager& GetCoreTiming() const;
   CommandProcessor::CommandProcessorManager& GetCommandProcessor() const;
   DSP::DSPManager& GetDSP() const;
@@ -194,6 +205,11 @@ public:
   XFStateManager& GetXFStateManager() const;
   VideoInterface::VideoInterfaceManager& GetVideoInterface() const;
   VideoCommon::CustomAssetLoader& GetCustomAssetLoader() const;
+  IOS::LLE::ARMv5& GetARM9() const;
+
+  // TODO: This should be a config option somewhere
+  void SetDebuggingCPUNum(CPU::CPUNumber cpu);
+  CPU::CPUNumber GetDebuggingCPUNum() const;
 
 private:
   System();

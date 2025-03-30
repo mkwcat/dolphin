@@ -124,6 +124,7 @@ LogManager::LogManager()
   m_log[LogType::IOS_DI] = {"IOS_DI", "IOS - Drive Interface"};
   m_log[LogType::IOS_ES] = {"IOS_ES", "IOS - ETicket Services"};
   m_log[LogType::IOS_FS] = {"IOS_FS", "IOS - Filesystem Services"};
+  m_log[LogType::IOS_LLE] = {"IOS_LLE", "IOS Low Level Emulation"};
   m_log[LogType::IOS_SD] = {"IOS_SD", "IOS - SDIO"};
   m_log[LogType::IOS_SSL] = {"IOS_SSL", "IOS - SSL"};
   m_log[LogType::IOS_STM] = {"IOS_STM", "IOS - State Transition Manager"};

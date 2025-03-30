@@ -18,6 +18,15 @@ namespace Core
 class System;
 }
 
+namespace PowerPC
+{
+class PowerPCManager;
+}
+namespace IOS::LLE
+{
+class ARMv5;
+}
+
 class RegisterWidget : public QDockWidget
 {
   Q_OBJECT
@@ -43,6 +52,9 @@ private:
   void CreateWidgets();
   void ConnectWidgets();
   void PopulateTable();
+
+  void PopulateTablePowerPC(PowerPC::PowerPCManager& power_pc);
+  void PopulateTableARM9(IOS::LLE::ARMv5& arm);
 
   void ShowContextMenu();
   void OnItemChanged(QTableWidgetItem* item);

@@ -364,20 +364,20 @@ void MMU::WriteToHardware(u32 em_address, const u32 data, const u32 size)
     switch (size)
     {
     case 1:
-      m_memory.GetMMIOMapping()->Write<u8>(m_system, em_address, static_cast<u8>(data));
+      m_memory.GetMMIOMapping()->Write<u8>(m_system, em_address & ~0x00800000, static_cast<u8>(data));
       return;
     case 2:
-      m_memory.GetMMIOMapping()->Write<u16>(m_system, em_address, static_cast<u16>(data));
+      m_memory.GetMMIOMapping()->Write<u16>(m_system, em_address & ~0x00800000, static_cast<u16>(data));
       return;
     case 4:
-      m_memory.GetMMIOMapping()->Write<u32>(m_system, em_address, data);
+      m_memory.GetMMIOMapping()->Write<u32>(m_system, em_address & ~0x00800000, data);
       return;
     default:
       // Some kind of misaligned write. TODO: Does this match how the actual hardware handles it?
       for (size_t i = size * 8; i > 0; em_address++)
       {
         i -= 8;
-        m_memory.GetMMIOMapping()->Write<u8>(m_system, em_address, static_cast<u8>(data >> i));
+        m_memory.GetMMIOMapping()->Write<u8>(m_system, em_address & ~0x00800000, static_cast<u8>(data >> i));
       }
       return;
     }
@@ -1052,7 +1052,7 @@ void MMU::DMA_LCToMemory(const u32 mem_address, const u32 cache_address, const u
     for (u32 i = 0; i < 32 * num_blocks; i += 4)
     {
       const u32 data = Common::swap32(m_memory.GetL1Cache() + ((cache_address + i) & 0x3FFFF));
-      m_memory.GetMMIOMapping()->Write(m_system, mem_address + i, data);
+      m_memory.GetMMIOMapping()->Write(m_system, (mem_address + i) & ~0x00800000, data);
     }
     return;
   }

@@ -55,7 +55,7 @@ static bool QtMsgAlertHandler(const char* caption, const char* text, bool yes_no
     // Host::SetRenderFocus or Core::CPUThreadGuard. (Host::SetRenderFocus
     // can get called automatically when a dialog steals the focus.)
 
-    Common::ScopeGuard cpu_scope_guard(&Core::UndeclareAsCPUThread);
+    Common::ScopeGuard cpu_scope_guard([]() { Core::UndeclareAsCPUThread(); });
     Common::ScopeGuard gpu_scope_guard(&Core::UndeclareAsGPUThread);
 
     if (!called_from_cpu_thread)

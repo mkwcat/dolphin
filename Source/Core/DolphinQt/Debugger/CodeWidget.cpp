@@ -23,6 +23,7 @@
 #include "Core/Core.h"
 #include "Core/Debugger/Debugger_SymbolMap.h"
 #include "Core/HW/CPU.h"
+#include "Core/IOS_LLE/ARM.h"
 #include "Core/PowerPC/MMU.h"
 #include "Core/PowerPC/PPCSymbolDB.h"
 #include "Core/PowerPC/PowerPC.h"
@@ -61,7 +62,8 @@ CodeWidget::CodeWidget(QWidget* parent)
 
   connect(Host::GetInstance(), &Host::UpdateDisasmDialog, this, [this] {
     if (Core::GetState(m_system) == Core::State::Paused)
-      SetAddress(m_system.GetPPCState().pc, CodeViewWidget::SetAddressUpdate::WithoutUpdate);
+      SetAddress(m_system.GetCPUImpl(m_system.GetDebuggingCPUNum())->GetPC(),
+                 CodeViewWidget::SetAddressUpdate::WithoutUpdate);
     Update();
   });
 
@@ -489,19 +491,18 @@ void CodeWidget::UpdateFunctionCallers(const Common::Symbol* symbol)
 
 void CodeWidget::Step()
 {
-  auto& cpu = m_system.GetCPU();
+  auto& cpu = m_system.GetCPU(m_system.GetDebuggingCPUNum());
 
   if (!cpu.IsStepping())
     return;
 
   Common::Event sync_event;
 
-  auto& power_pc = m_system.GetPowerPC();
-  PowerPC::CoreMode old_mode = power_pc.GetMode();
-  power_pc.SetMode(PowerPC::CoreMode::Interpreter);
+  CPU::CoreMode old_mode = cpu.GetMode();
+  cpu.SetMode(PowerPC::CoreMode::Interpreter);
   cpu.StepOpcode(&sync_event);
   sync_event.WaitFor(std::chrono::milliseconds(20));
-  power_pc.SetMode(old_mode);
+  cpu.SetMode(old_mode);
   Core::DisplayMessage(tr("Step successful!").toStdString(), 2000);
   // Will get a UpdateDisasmDialog(), don't update the GUI here.
 
@@ -512,20 +513,29 @@ void CodeWidget::Step()
 
 void CodeWidget::StepOver()
 {
-  auto& cpu = m_system.GetCPU();
+  auto& cpu = m_system.GetCPU(m_system.GetDebuggingCPUNum());
 
   if (!cpu.IsStepping())
     return;
 
+  if (!cpu.GetPowerPC())
+  {
+    // Step Over not supported for the current CPU core
+    Step();
+    return;
+  }
+
+  auto& power_pc = *cpu.GetPowerPC();
+
   const UGeckoInstruction inst = [&] {
     Core::CPUThreadGuard guard(m_system);
-    return PowerPC::MMU::HostRead_Instruction(guard, m_system.GetPPCState().pc);
+    return PowerPC::MMU::HostRead_Instruction(guard, power_pc.GetPC());
   }();
 
   if (inst.LK)
   {
-    auto& breakpoints = m_system.GetPowerPC().GetBreakPoints();
-    breakpoints.SetTemporary(m_system.GetPPCState().pc + 4);
+    auto& breakpoints = power_pc.GetBreakPoints();
+    breakpoints.SetTemporary(power_pc.GetPC() + 4);
     cpu.SetStepping(false);
     Core::DisplayMessage(tr("Step over in progress...").toStdString(), 2000);
   }
@@ -550,16 +560,22 @@ static bool WillInstructionReturn(Core::System& system, UGeckoInstruction inst)
 
 void CodeWidget::StepOut()
 {
-  auto& cpu = m_system.GetCPU();
+  auto& cpu = m_system.GetCPU(m_system.GetDebuggingCPUNum());
 
   if (!cpu.IsStepping())
     return;
+
+  if (!cpu.GetPowerPC())
+  {
+    // Step Out not supported for the current CPU core
+    return;
+  }
 
   // Keep stepping until the next return instruction or timeout after five seconds
   using clock = std::chrono::steady_clock;
   clock::time_point timeout = clock::now() + std::chrono::seconds(5);
 
-  auto& power_pc = m_system.GetPowerPC();
+  auto& power_pc = *cpu.GetPowerPC();
   auto& ppc_state = power_pc.GetPPCState();
   {
     Core::CPUThreadGuard guard(m_system);
@@ -599,7 +615,7 @@ void CodeWidget::StepOut()
     power_pc.SetMode(old_mode);
   }
 
-  emit Host::GetInstance()->UpdateDisasmDialog();
+  emit Host::GetInstance() -> UpdateDisasmDialog();
 
   if (power_pc.CheckBreakPoints())
     Core::DisplayMessage(tr("Breakpoint encountered! Step out aborted.").toStdString(), 2000);
@@ -611,13 +627,38 @@ void CodeWidget::StepOut()
 
 void CodeWidget::Skip()
 {
-  m_system.GetPPCState().pc += 4;
+  auto& cpu = m_system.GetCPU(m_system.GetDebuggingCPUNum());
+
+  if (cpu.GetPowerPC())
+  {
+    cpu.GetPowerPC()->GetPPCState().pc += 4;
+  }
+  else if (cpu.GetARM9())
+  {
+    // Can't just set the PC and expect it to work
+    IOS::LLE::ARMv5& arm9 = *cpu.GetARM9();
+    u32 pc = arm9.GetPC();
+    if (arm9.CPSR & 0x20)
+    {
+      // THUMB
+      pc += 2;
+    }
+    else
+    {
+      // ARM
+      pc += 4;
+    }
+
+    cpu.GetARM9()->JumpTo(pc, false);
+  }
+
   ShowPC();
 }
 
 void CodeWidget::ShowPC()
 {
-  m_code_view->SetAddress(m_system.GetPPCState().pc, CodeViewWidget::SetAddressUpdate::WithUpdate);
+  m_code_view->SetAddress(m_system.GetCPUImpl(m_system.GetDebuggingCPUNum())->GetPC(),
+                          CodeViewWidget::SetAddressUpdate::WithUpdate);
   Update();
 }
 

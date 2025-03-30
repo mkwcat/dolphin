@@ -183,7 +183,7 @@ public:
 
   bool BootstrapPPC(const std::string& boot_content_path);
   bool BootIOS(u64 ios_title_id, HangPPC hang_ppc = HangPPC::No,
-               const std::string& boot_content_path = {});
+               const std::string& boot_content_path = {}, bool ios_lle = false);
   void InitIPC();
 
   Core::System& GetSystem() const { return m_system; }
