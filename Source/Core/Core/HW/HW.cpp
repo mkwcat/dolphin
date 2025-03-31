@@ -9,6 +9,11 @@
 #include "Core/Config/MainSettings.h"
 #include "Core/Core.h"
 #include "Core/CoreTiming.h"
+#include "Core/HW/AHB/AHBMemBridge.h"
+#include "Core/HW/AHB/AHBMemoryController.h"
+#include "Core/HW/AHB/NANDInterface.h"
+#include "Core/HW/AHB/AESEngine.h"
+#include "Core/HW/AHB/SHAEngine.h"
 #include "Core/HW/AddressSpace.h"
 #include "Core/HW/AudioInterface.h"
 #include "Core/HW/CPU.h"
@@ -57,6 +62,11 @@ void Init(Core::System& system, const Sram* override_sram)
   if (system.IsWii())
   {
     system.GetWiiIPC().Init();
+    system.GetAHBMemBridgeInterface().Init();
+    system.GetAHBMemoryController().Init();
+    system.GetNANDInterface().Init();
+    system.GetAESEngine().Init();
+    system.GetSHAEngine().Init();
     IOS::HLE::Init(system);  // Depends on Memory
   }
 }
@@ -112,7 +122,12 @@ void DoState(Core::System& system, PointerWrap& p)
   {
     system.GetWiiIPC().DoState(p);
     p.DoMarker("IOS");
-    system.GetIOS()->DoState(p);
+
+    bool ios_hle = !!system.GetIOS();
+    p.Do(ios_hle);
+
+    if (ios_hle)
+      system.GetIOS()->DoState(p);
     p.DoMarker("IOS::HLE");
   }
 

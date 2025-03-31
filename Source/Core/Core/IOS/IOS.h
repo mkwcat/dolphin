@@ -16,6 +16,7 @@
 #include "Core/CoreTiming.h"
 #include "Core/HW/SystemTimers.h"
 #include "Core/IOS/IOSC.h"
+#include "Core/System.h"
 
 class PointerWrap;
 
@@ -121,7 +122,12 @@ void WriteReturnValue(Memory::MemoryManager& memory, s32 value, u32 address);
 class Kernel
 {
 public:
-  explicit Kernel(IOSC::ConsoleType console_type = IOSC::ConsoleType::Retail);
+  explicit Kernel(Core::System& system = Core::System::GetInstance(),
+                  IOSC::ConsoleType console_type = IOSC::ConsoleType::Retail);
+  explicit Kernel(IOSC::ConsoleType console_type)
+      : Kernel(Core::System::GetInstance(), console_type)
+  {
+  }
   virtual ~Kernel();
 
   // These are *always* part of the IOS kernel and always available.
@@ -135,7 +141,8 @@ public:
   IOSC& GetIOSC();
 
 protected:
-  explicit Kernel(u64 title_id);
+  explicit Kernel(Core::System& system, u64 title_id);
+  explicit Kernel(u64 title_id) : Kernel(Core::System::GetInstance(), title_id) {}
 
   std::unique_ptr<FSCore> m_fs_core;
   std::unique_ptr<ESCore> m_es_core;

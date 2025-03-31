@@ -502,7 +502,7 @@ void RegisterWidget::PopulateTableARM9(IOS::LLE::ARMv5& arm)
   {
     // General purpose registers (int)
     AddRegister(
-        i, 0, RegisterType::gpr, "r" + std::to_string(i), [arm, i] { return arm.R[i]; },
+        i, 0, RegisterType::gpr, "r" + std::to_string(i), [&arm, i] { return arm.R[i]; },
         [&arm, i](u64 value) { arm.R[i] = value; });
   }
 }

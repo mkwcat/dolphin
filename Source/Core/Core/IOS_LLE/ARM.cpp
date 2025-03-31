@@ -129,7 +129,6 @@ ARMv5::ARMv5(Core::System& system, Memory::MemoryManager& memory, std::optional<
              bool jit)
     : ARM(0, jit, gdb), m_system(system), m_memory(memory)
 {
-  PU_Map = PU_PrivMap;
 }
 
 ARMv5::~ARMv5()
@@ -150,7 +149,7 @@ void ARM::SetGdbArgs(std::optional<GDBArgs> gdb)
 #endif
 }
 
-void ARM::Reset()
+void ARMv5::Reset()
 {
   Cycles = 0;
   Halted = 0;
@@ -180,6 +179,8 @@ void ARM::Reset()
 
   ExceptionBase = 0xFFFF0000;
 
+  CP15Reset();
+
   // CodeMem.Mem = NULL;
 
 #ifdef JIT_ENABLED
@@ -195,13 +196,6 @@ void ARM::Reset()
 
   // zorp
   JumpTo(ExceptionBase);
-}
-
-void ARMv5::Reset()
-{
-  PU_Map = PU_PrivMap;
-
-  ARM::Reset();
 }
 
 #if 0
@@ -252,11 +246,6 @@ void ARM::DoSavestate(Savestate* file)
         {
             SetupCodeMem(R[15]); // should fix it
             ((ARMv5*)this)->RegionCodeCycles = ((ARMv5*)this)->MemTimings[R[15] >> 12][0];
-
-            if ((CPSR & 0x1F) == 0x10)
-                ((ARMv5*)this)->PU_Map = ((ARMv5*)this)->PU_UserMap;
-            else
-                ((ARMv5*)this)->PU_Map = ((ARMv5*)this)->PU_PrivMap;
         }
         else
         {
@@ -338,8 +327,10 @@ void ARMv5::JumpTo(u32 addr, bool restorecpsr)
     CPSR &= ~0x20;
   }
 
-  if ((CP15Control & 0x5) && !(PU_Map[addr >> 12] & 0x04))
+  u32 addrCopy = addr;
+  if (!TranslateAddress(addrCopy, false))
   {
+    m_reg_far = addr;
     PrefetchAbort();
     return;
   }
@@ -458,14 +449,6 @@ void ARM::UpdateMode(u32 oldmode, u32 newmode, bool phony)
     std::swap(R[14], R_UND[1]);
     break;
   }
-
-  if (!phony)
-  {
-    if ((newmode & 0x1F) == 0x10)
-      ((ARMv5*)this)->PU_Map = ((ARMv5*)this)->PU_UserMap;
-    else
-      ((ARMv5*)this)->PU_Map = ((ARMv5*)this)->PU_PrivMap;
-  }
 }
 
 void ARM::TriggerIRQ()
@@ -494,7 +477,8 @@ void ARMv5::PrefetchAbort()
 
   // this shouldn't happen, but if it does, we're stuck in some nasty endless loop
   // so better take care of it
-  if ((CP15Control & 0x5) && !(PU_Map[ExceptionBase >> 12] & 0x04))
+  u32 exceptionBaseCopy = ExceptionBase + 0x0C;
+  if (!TranslateAddress(exceptionBaseCopy, false))
   {
     ERROR_LOG_FMT(IOS_LLE, "!!!!! EXCEPTION REGION NOT EXECUTABLE. THIS IS VERY BAD!!\n");
     // NDS.Stop(Platform::StopReason::BadExceptionRegion);
@@ -592,7 +576,7 @@ void ARMv5::SingleStepInterpreter(bool skip_bp)
     else
       NextInstr[1] = CodeRead32(R[15], false);
 
-    INFO_LOG_FMT(IOS_LLE, "THUMB9 instruction {:04x} @ {:08x}\n", CurInstr & 0xFFFF, pcAddr);
+    // INFO_LOG_FMT(IOS_LLE, "THUMB9 instruction {:04x} @ {:08x}\n", CurInstr & 0xFFFF, pcAddr);
 
     // actually execute
     u32 icode = (CurInstr >> 6) & 0x3FF;
@@ -634,7 +618,7 @@ void ARMv5::SingleStepInterpreter(bool skip_bp)
     NextInstr[0] = NextInstr[1];
     NextInstr[1] = CodeRead32(R[15], false);
 
-    INFO_LOG_FMT(IOS_LLE, "ARM9 instruction {:08x} @ {:08x}\n", CurInstr, pcAddr);
+    // INFO_LOG_FMT(IOS_LLE, "ARM9 instruction {:08x} @ {:08x}\n", CurInstr, pcAddr);
 
     // actually execute
     if (CheckCondition(CurInstr >> 28))
@@ -1277,14 +1261,19 @@ void ARMv5::BusWrite32(u32 addr, u32 val)
 
 u32 ARMv5::HostRead_U32(u32 addr)
 {
+  TranslateAddress(addr, false);
   return ReadFromHardware<u32>(addr, true);
 }
 u32 ARMv5::HostRead_Instruction(u32 addr)
 {
+  TranslateAddress(addr, false);
   return ReadFromHardware<u32>(addr, true);
 }
-bool ARMv5::HostIsRAMAddress(u32 addr) const
+
+bool ARMv5::HostIsRAMAddress(u32 addr)
 {
+  TranslateAddress(addr, false);
+
   if ((addr & 0xF8000000) == 0x00000000 &&
       ((addr & m_memory.GetRamMask()) + 3) < m_memory.GetRamSizeReal())
     return true;
@@ -1297,10 +1286,39 @@ bool ARMv5::HostIsRAMAddress(u32 addr) const
   bool sram_mirr = !!m_system.GetWiiIPC().GetSRNPROTFlags()[IOS::SRNPROT::IOUEN];
   if (m_memory.GetIopSRAM() &&
       ((addr & 0xFF400000) == 0x0D400000 || (sram_mirr && (addr & 0xFFF00000) == 0xFFF00000)) &&
-      (addr & 0xFFFFF) <= 0xFFFFC)
+      (addr & 0x1FFFF) <= 0x1FFFC)
     return true;
 
   return false;
+}
+
+void ARM::SVCWrite0(u32 addr)
+{
+  ARMv5* v5 = static_cast<ARMv5*>(this);
+
+  while (true)
+  {
+    if (!v5->HostIsRAMAddress(addr))
+      break;
+
+    u32 v;
+    v5->DataRead8(addr, &v);
+
+    if (v == 0)
+      break;
+
+    if (v == '\n')
+    {
+      INFO_LOG_FMT(IOS_LLE, "IOS REPORT: {:s}", m_svc_write_buffer.data());
+      m_svc_write_buffer.clear();
+    }
+    else if (v != '\r')
+    {
+      m_svc_write_buffer.push_back(v);
+    }
+
+    addr += 1;
+  }
 }
 
 }  // namespace IOS::LLE

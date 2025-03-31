@@ -255,7 +255,7 @@ A_IMPLEMENT_WB_LDRSTR(LDRB)
     r--; /* printf("!! MISALIGNED LDRD %d\n", r+1); */                                             \
   }                                                                                                \
   cpu->DataRead32(offset, &cpu->R[r]);                                                             \
-  cpu->DataRead32S(offset + 4, &cpu->R[r + 1]);                                                    \
+  cpu->DataRead32(offset + 4, &cpu->R[r + 1]);                                                     \
   cpu->AddCycles_CDI();
 
 #define A_LDRD_POST                                                                                \
@@ -269,7 +269,7 @@ A_IMPLEMENT_WB_LDRSTR(LDRB)
     r--; /* printf("!! MISALIGNED LDRD_POST %d\n", r+1); */                                        \
   }                                                                                                \
   cpu->DataRead32(addr, &cpu->R[r]);                                                               \
-  cpu->DataRead32S(addr + 4, &cpu->R[r + 1]);                                                      \
+  cpu->DataRead32(addr + 4, &cpu->R[r + 1]);                                                       \
   cpu->AddCycles_CDI();
 
 #define A_STRD                                                                                     \
@@ -449,7 +449,7 @@ void A_LDM(ARM* cpu)
       if (first)
         cpu->DataRead32(base, &cpu->R[i]);
       else
-        cpu->DataRead32S(base, &cpu->R[i]);
+        cpu->DataRead32(base, &cpu->R[i]);
       first = false;
       if (!preinc)
         base += 4;
@@ -464,7 +464,7 @@ void A_LDM(ARM* cpu)
     if (first)
       cpu->DataRead32(base, &pc);
     else
-      cpu->DataRead32S(base, &pc);
+      cpu->DataRead32(base, &pc);
     if (!preinc)
       base += 4;
 
@@ -544,12 +544,12 @@ void A_STM(ARM* cpu)
       if (i == baseid && !isbanked)
       {
         if ((cpu->Num == 0) || (!(cpu->CurInstr & ((1 << i) - 1))))
-          first ? cpu->DataWrite32(base, oldbase) : cpu->DataWrite32S(base, oldbase);
+          first ? cpu->DataWrite32(base, oldbase) : cpu->DataWrite32(base, oldbase);
         else
-          first ? cpu->DataWrite32(base, base) : cpu->DataWrite32S(base, base);  // checkme
+          first ? cpu->DataWrite32(base, base) : cpu->DataWrite32(base, base);  // checkme
       }
       else
-        first ? cpu->DataWrite32(base, cpu->R[i]) : cpu->DataWrite32S(base, cpu->R[i]);
+        first ? cpu->DataWrite32(base, cpu->R[i]) : cpu->DataWrite32(base, cpu->R[i]);
 
       first = false;
 
@@ -745,7 +745,7 @@ void T_PUSH(ARM* cpu)
       if (first)
         cpu->DataWrite32(base, cpu->R[i]);
       else
-        cpu->DataWrite32S(base, cpu->R[i]);
+        cpu->DataWrite32(base, cpu->R[i]);
       first = false;
       base += 4;
     }
@@ -756,7 +756,7 @@ void T_PUSH(ARM* cpu)
     if (first)
       cpu->DataWrite32(base, cpu->R[14]);
     else
-      cpu->DataWrite32S(base, cpu->R[14]);
+      cpu->DataWrite32(base, cpu->R[14]);
   }
 
   cpu->AddCycles_CD();
@@ -774,7 +774,7 @@ void T_POP(ARM* cpu)
       if (first)
         cpu->DataRead32(base, &cpu->R[i]);
       else
-        cpu->DataRead32S(base, &cpu->R[i]);
+        cpu->DataRead32(base, &cpu->R[i]);
       first = false;
       base += 4;
     }
@@ -786,7 +786,7 @@ void T_POP(ARM* cpu)
     if (first)
       cpu->DataRead32(base, &pc);
     else
-      cpu->DataRead32S(base, &pc);
+      cpu->DataRead32(base, &pc);
     if (cpu->Num == 1)
       pc |= 0x1;
     cpu->JumpTo(pc);
@@ -809,7 +809,7 @@ void T_STMIA(ARM* cpu)
       if (first)
         cpu->DataWrite32(base, cpu->R[i]);
       else
-        cpu->DataWrite32S(base, cpu->R[i]);
+        cpu->DataWrite32(base, cpu->R[i]);
       first = false;
       base += 4;
     }
@@ -832,7 +832,7 @@ void T_LDMIA(ARM* cpu)
       if (first)
         cpu->DataRead32(base, &cpu->R[i]);
       else
-        cpu->DataRead32S(base, &cpu->R[i]);
+        cpu->DataRead32(base, &cpu->R[i]);
       first = false;
       base += 4;
     }

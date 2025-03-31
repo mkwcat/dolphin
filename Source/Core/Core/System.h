@@ -70,6 +70,7 @@ class HSPManager;
 namespace IOS
 {
 class WiiIPC;
+class WiiKeys;
 }
 namespace IOS::HLE::USB
 {
@@ -118,6 +119,23 @@ class CustomAssetLoader;
 namespace VideoInterface
 {
 class VideoInterfaceManager;
+}
+namespace AHB
+{
+class AHBMemBridgeInterface;
+class AHBMemoryController;
+}  // namespace AHB
+namespace NANDInterface
+{
+class NANDInterfaceManager;
+}
+namespace AESEngine
+{
+class AESEngineInterface;
+}
+namespace SHAEngine
+{
+class SHAEngineInterface;
 }
 
 namespace Core
@@ -188,6 +206,7 @@ public:
   IOS::HLE::USB::SkylanderPortal& GetSkylanderPortal() const;
   IOS::HLE::USB::InfinityBase& GetInfinityBase() const;
   IOS::WiiIPC& GetWiiIPC() const;
+  IOS::WiiKeys& GetWiiKeys() const;
   Memory::MemoryManager& GetMemory() const;
   MemoryInterface::MemoryInterfaceManager& GetMemoryInterface() const;
   PowerPC::MMU& GetMMU() const;
@@ -206,6 +225,11 @@ public:
   VideoInterface::VideoInterfaceManager& GetVideoInterface() const;
   VideoCommon::CustomAssetLoader& GetCustomAssetLoader() const;
   IOS::LLE::ARMv5& GetARM9() const;
+  AHB::AHBMemBridgeInterface& GetAHBMemBridgeInterface() const;
+  AHB::AHBMemoryController& GetAHBMemoryController() const;
+  NANDInterface::NANDInterfaceManager& GetNANDInterface() const;
+  AESEngine::AESEngineInterface& GetAESEngine() const;
+  SHAEngine::SHAEngineInterface& GetSHAEngine() const;
 
   // TODO: This should be a config option somewhere
   void SetDebuggingCPUNum(CPU::CPUNumber cpu);

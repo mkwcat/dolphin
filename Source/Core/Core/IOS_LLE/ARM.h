@@ -75,8 +75,6 @@ public:
 
   void SetGdbArgs(std::optional<GDBArgs> gdb);
 
-  virtual void Reset();
-
   virtual void FillPipeline() = 0;
 
   virtual void JumpTo(u32 addr, bool restorecpsr = false) = 0;
@@ -209,7 +207,12 @@ public:
   Gdb::GdbStub GdbStub;
 #endif
 
+void SVCWrite0(u32 addr);
+
 protected:
+  std::string m_svc_write_buffer;
+
+
   virtual u8 BusRead8(u32 addr) = 0;
   virtual u16 BusRead16(u32 addr) = 0;
   virtual u32 BusRead32(u32 addr) = 0;
@@ -350,7 +353,6 @@ public:
   u32 CP15Control;
 
   u32 RNGSeed;
-  u32 TraceProcessID;
 
   // s32 RegionCodeCycles;
 
@@ -358,27 +360,18 @@ public:
   u32 ICacheTags[64 * 4];
   u8 ICacheCount[64];
 
-  u32 PU_CodeCacheable;
-  u32 PU_DataCacheable;
-  u32 PU_DataCacheWrite;
-
-  u32 PU_CodeRW;
-  u32 PU_DataRW;
-
-  u32 PU_Region[8];
-
-  // 0=dataR 1=dataW 2=codeR 4=datacache 5=datawrite 6=codecache
-  u8 PU_PrivMap[0x100000];
-  u8 PU_UserMap[0x100000];
-
-  // games operate under system mode, generally
-  // #define PU_Map PU_PrivMap
-  u8* PU_Map;
-
   // code/16N/32N/32S
   // u8 MemTimings[0x100000][4];
 
   u8* CurICacheLine;
+
+  u32 m_reg_ttbr;
+  u32 m_reg_dfsr;
+  u32 m_reg_ifsr;
+  u32 m_reg_far;
+  u32 m_reg_dacr;
+  u32 m_reg_fcse_pid;
+  u32 m_reg_context_id;
 
 private:
   void SingleStepInterpreter(bool skip_bp);
@@ -396,6 +389,9 @@ private:
   void WriteMem(u32 addr, int size, u32 v) override;
 #endif
 
+  bool CheckAccessPermission(u32 ap, bool is_write);
+  bool TranslateAddress(u32& addr, bool is_write);
+
   template <typename T>
   T ReadFromHardware(u32 em_address, bool host);
   void WriteToHardware(u32 em_address, const u32 data, const u32 size, bool host);
@@ -410,7 +406,7 @@ private:
 public:
   u32 HostRead_U32(u32 addr);
   u32 HostRead_Instruction(u32 addr);
-  bool HostIsRAMAddress(u32 addr) const;
+  bool HostIsRAMAddress(u32 addr);
 };
 
 namespace ARMInterpreter

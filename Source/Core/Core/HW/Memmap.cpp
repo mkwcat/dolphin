@@ -23,6 +23,11 @@
 #include "Common/Swap.h"
 #include "Core/Config/MainSettings.h"
 #include "Core/Core.h"
+#include "Core/HW/AHB/AESEngine.h"
+#include "Core/HW/AHB/AHBMemBridge.h"
+#include "Core/HW/AHB/AHBMemoryController.h"
+#include "Core/HW/AHB/NANDInterface.h"
+#include "Core/HW/AHB/SHAEngine.h"
 #include "Core/HW/AudioInterface.h"
 #include "Core/HW/DSP.h"
 #include "Core/HW/DVD/DVDInterface.h"
@@ -64,10 +69,16 @@ void MemoryManager::InitMMIO(bool is_wii)
   if (is_wii)
   {
     m_system.GetWiiIPC().RegisterMMIO(m_mmio_mapping.get(), 0x0D000000);
+    m_system.GetMemoryInterface().RegisterMMIO(m_mmio_mapping.get(), 0x0D0B0000);
     m_system.GetDVDInterface().RegisterMMIO(m_mmio_mapping.get(), 0x0D006000, true);
     m_system.GetSerialInterface().RegisterMMIO(m_mmio_mapping.get(), 0x0D006400);
     m_system.GetExpansionInterface().RegisterMMIO(m_mmio_mapping.get(), 0x0D006800);
     m_system.GetAudioInterface().RegisterMMIO(m_mmio_mapping.get(), 0x0D006C00);
+    m_system.GetAHBMemBridgeInterface().RegisterMMIO(m_mmio_mapping.get(), 0x0D000000);
+    m_system.GetAHBMemoryController().RegisterMMIO(m_mmio_mapping.get(), 0x0D000000);
+    m_system.GetNANDInterface().RegisterMMIO(m_mmio_mapping.get(), 0x0D000000);
+    m_system.GetAESEngine().RegisterMMIO(m_mmio_mapping.get(), 0x0D020000);
+    m_system.GetSHAEngine().RegisterMMIO(m_mmio_mapping.get(), 0x0D030000);
   }
 }
 

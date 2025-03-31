@@ -12,6 +12,11 @@
 #include "Core/CoreTiming.h"
 #include "Core/FifoPlayer/FifoPlayer.h"
 #include "Core/FifoPlayer/FifoRecorder.h"
+#include "Core/HW/AHB/AESEngine.h"
+#include "Core/HW/AHB/AHBMemBridge.h"
+#include "Core/HW/AHB/AHBMemoryController.h"
+#include "Core/HW/AHB/NANDInterface.h"
+#include "Core/HW/AHB/SHAEngine.h"
 #include "Core/HW/AudioInterface.h"
 #include "Core/HW/CPU.h"
 #include "Core/HW/DSP.h"
@@ -32,6 +37,7 @@
 #include "Core/PowerPC/Interpreter/Interpreter.h"
 #include "Core/PowerPC/JitInterface.h"
 #include "Core/PowerPC/PowerPC.h"
+#include "Core/WiiKeys.h"
 #include "IOS/USB/Emulated/Infinity.h"
 #include "IOS/USB/Emulated/Skylanders/Skylander.h"
 #include "IOS_LLE/ARM.h"
@@ -59,7 +65,7 @@ struct System::Impl
         m_interpreter(system, m_power_pc.GetPPCState(), m_mmu, m_power_pc.GetBranchWatch(),
                       m_power_pc.GetSymbolDB()),
         m_jit_interface(system), m_fifo_player(system), m_fifo_recorder(system), m_movie(system),
-        m_arm{system, m_memory, {}, false}
+        m_arm{system, m_memory, {}, false}, m_ahb_mem_bridge_interface(system)
   {
   }
 
@@ -68,6 +74,8 @@ struct System::Impl
   bool m_audio_dump_started = false;
 
   std::unique_ptr<IOS::HLE::EmulationKernel> m_ios;
+
+  CPU::CPUNumber m_debugging_cpu = CPU::CPUNumber::ARM9;
 
   AudioInterface::AudioInterfaceManager m_audio_interface;
   CoreTiming::CoreTimingManager m_core_timing;
@@ -85,6 +93,7 @@ struct System::Impl
   IOS::HLE::USB::InfinityBase m_infinity_base;
   IOS::HLE::USB::SkylanderPortal m_skylander_portal;
   IOS::WiiIPC m_wii_ipc;
+  IOS::WiiKeys m_wii_keys;
   Memory::MemoryManager m_memory;
   MemoryInterface::MemoryInterfaceManager m_memory_interface;
   PixelEngine::PixelEngineManager m_pixel_engine;
@@ -105,8 +114,11 @@ struct System::Impl
   FifoRecorder m_fifo_recorder;
   Movie::MovieManager m_movie;
   IOS::LLE::ARMv5 m_arm;
-
-  CPU::CPUNumber m_debugging_cpu = CPU::CPUNumber::ARM9;
+  AHB::AHBMemBridgeInterface m_ahb_mem_bridge_interface;
+  AHB::AHBMemoryController m_ahb_memory_controller;
+  NANDInterface::NANDInterfaceManager m_nand_interface;
+  AESEngine::AESEngineInterface m_aes_engine;
+  SHAEngine::SHAEngineInterface m_sha_engine;
 };
 
 System::System() : m_impl{std::make_unique<Impl>(*this)}
@@ -281,6 +293,11 @@ IOS::WiiIPC& System::GetWiiIPC() const
   return m_impl->m_wii_ipc;
 }
 
+IOS::WiiKeys& System::GetWiiKeys() const
+{
+  return m_impl->m_wii_keys;
+}
+
 Memory::MemoryManager& System::GetMemory() const
 {
   return m_impl->m_memory;
@@ -369,6 +386,31 @@ VideoCommon::CustomAssetLoader& System::GetCustomAssetLoader() const
 IOS::LLE::ARMv5& System::GetARM9() const
 {
   return m_impl->m_arm;
+}
+
+AHB::AHBMemBridgeInterface& System::GetAHBMemBridgeInterface() const
+{
+  return m_impl->m_ahb_mem_bridge_interface;
+}
+
+AHB::AHBMemoryController& System::GetAHBMemoryController() const
+{
+  return m_impl->m_ahb_memory_controller;
+}
+
+NANDInterface::NANDInterfaceManager& System::GetNANDInterface() const
+{
+  return m_impl->m_nand_interface;
+}
+
+AESEngine::AESEngineInterface& System::GetAESEngine() const
+{
+  return m_impl->m_aes_engine;
+}
+
+SHAEngine::SHAEngineInterface& System::GetSHAEngine() const
+{
+  return m_impl->m_sha_engine;
 }
 
 void System::SetDebuggingCPUNum(CPU::CPUNumber cpu)

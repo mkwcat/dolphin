@@ -25,6 +25,8 @@ namespace IOS
 {
 enum StarletInterruptCause
 {
+  INT_CAUSE_NONE = 0x0,
+
   INT_CAUSE_TIMER = 0x1,
   INT_CAUSE_NAND = 0x2,
   INT_CAUSE_AES = 0x4,
@@ -174,15 +176,25 @@ public:
 
   bool IsReady() const;
 
+  Common::Flags<GPIO> GetGPIOInFlags() const;
   Common::Flags<GPIO> GetGPIOOutFlags() const { return m_gpio_out; }
   Common::Flags<SRNPROT> GetSRNPROTFlags() const { return m_srnprot; }
   u32 GetSpare1() const { return m_spare1; }
 
+  u32 GetStarletTimer() const;
+
+  void TriggerIRQ(StarletInterruptCause cause);
+
 private:
   void InitState();
+  void ScheduleAlarm();
 
   static void UpdateInterruptsCallback(Core::System& system, u64 userdata, s64 cycles_late);
   void UpdateInterrupts();
+  static void TriggerAlarmCallback(Core::System& system, u64 userdata, s64 cycles_late);
+  void TriggerAlarm(u64 userdata);
+
+  void TriggerScheduledInterrupts();
 
   u32 m_ppc_msg = 0;
   u32 m_arm_msg = 0;
@@ -193,12 +205,17 @@ private:
   u32 m_arm_irq_flags = 0;
   u32 m_arm_irq_masks = 0;
 
+  std::mutex m_gpio_mutex;
   Common::Flags<GPIO> m_gpio_dir{};
   Common::Flags<GPIO> m_gpio_out{};
   Common::Flags<GPIO> m_gpio_ppcowner{};
+  Common::Flags<GPIO> m_gpio_intlvl{};
+  Common::Flags<GPIO> m_gpio_intsts{};
+  Common::Flags<GPIO> m_gpio_inten{};
 
   Common::Flags<SRNPROT> m_srnprot{};
   Common::Flags<BUSPROT> m_busprot{};
+  u32 m_aipprot;
 
   u32 m_spare0 = 0;
   u32 m_spare1 = 0;
@@ -206,6 +223,7 @@ private:
   u32 m_resets = 0;
 
   CoreTiming::EventType* m_event_type_update_interrupts = nullptr;
+  CoreTiming::EventType* m_event_type_iop_alarm = nullptr;
 
   // The timer register is incremented every 1/128th of the core clock frequency, or around every
   // 526.7 nanoseconds. It can be written to to reset to an arbitrary value.
@@ -215,6 +233,9 @@ private:
   u64 m_timer_base_time = {};
 
   u32 m_alarm = 0;
+
+  u32 m_efuse_addr = 0;
+  u32 m_efuse_data = 0;
 
   Core::System& m_system;
 };

@@ -24,20 +24,24 @@ namespace MMIO
 {
 // There are three main MMIO blocks on the Wii (only one on the GameCube):
 //  - 0x0C00xxxx: GameCube MMIOs (CP, PE, VI, PI, MI, DSP, DVD, SI, EI, AI, GP)
-//  - 0x0D00xxxx: Wii MMIOs and GC mirrors (IPC, DVD, SI, EI, AI)
-//  - 0x0D80xxxx: Mirror of 0x0D00xxxx.
+//  - 0x0D0xxxxx: Wii MMIOs and GC mirrors (IPC, DVD, SI, EI, AI)
+//  - 0x0D8xxxxx: Privileged mirror of 0x0D0xxxxx.
 //
 // In practice, since the third block is a mirror of the second one, we can
 // assume internally that there are only two blocks: one for GC, one for Wii.
+enum BlockSize
+{
+  GC_BLOCK_SIZE = 0x10000,
+  WII_BLOCK_SIZE = 0x100000,
+};
+
 enum Block
 {
   GC_BLOCK = 0,
-  WII_BLOCK = 1,
+  WII_BLOCK = GC_BLOCK + BlockSize::GC_BLOCK_SIZE,
 
-  NUM_BLOCKS
+  NUM_MMIOS = WII_BLOCK + BlockSize::WII_BLOCK_SIZE,
 };
-const u32 BLOCK_SIZE = 0x10000;
-const u32 NUM_MMIOS = NUM_BLOCKS * BLOCK_SIZE;
 
 // Checks if a given physical memory address refers to the MMIO address range.
 // In practice, most games use a virtual memory mapping (via BATs set in the
@@ -55,26 +59,26 @@ inline bool IsMMIOAddress(u32 address, bool is_wii)
 
   if (is_wii)
   {
-    return ((address & 0xFFFF0000) == 0x0D000000) ||  // Wii MMIOs
-           ((address & 0xFFFF0000) == 0x0D800000);    // Mirror of Wii MMIOs
+    return ((address & 0xFFF00000) == 0x0D000000) ||  // Wii MMIOs
+           ((address & 0xFFF00000) == 0x0D800000);    // Mirror of Wii MMIOs
   }
 
   return false;
 }
 
 // Compute the internal unique ID for a given MMIO address. This ID is computed
-// from a very simple formula: (block_id << 16) | lower_16_bits(address).
+// from a very simple formula: block ID + (address & (block size - 1)).
 //
 // The block ID can easily be computed by simply checking bit 24 (CC vs. CD).
 inline u32 UniqueID(u32 address)
 {
   DEBUG_ASSERT_MSG(MEMMAP,
                    ((address & 0xFFFF0000) == 0x0C000000) ||
-                       ((address & 0xFFFF0000) == 0x0D000000) ||
-                       ((address & 0xFFFF0000) == 0x0D800000),
+                       ((address & 0xFFF00000) == 0x0D000000) ||
+                       ((address & 0xFFF00000) == 0x0D800000),
                    "Trying to get the ID of a non-existing MMIO address.");
 
-  return (((address >> 24) & 1) << 16) | (address & 0xFFFF);
+  return (((address >> 24) & 1) * BlockSize::GC_BLOCK_SIZE) + (address & 0xFFFFF);
 }
 
 // Some utilities functions to define MMIO mappings.
@@ -109,19 +113,22 @@ public:
   // Example usages can be found in just about any HW/ module in Dolphin's
   // codebase.
   template <typename Unit>
-  void RegisterRead(u32 addr, ReadHandlingMethod<Unit>* read, AccessCheckFunc access_check = nullptr)
+  void RegisterRead(u32 addr, ReadHandlingMethod<Unit>* read,
+                    AccessCheckFunc access_check = nullptr)
   {
     GetHandlerForRead<Unit>(addr).ResetMethod(read, access_check);
   }
 
   template <typename Unit>
-  void RegisterWrite(u32 addr, WriteHandlingMethod<Unit>* write, AccessCheckFunc access_check = nullptr)
+  void RegisterWrite(u32 addr, WriteHandlingMethod<Unit>* write,
+                     AccessCheckFunc access_check = nullptr)
   {
     GetHandlerForWrite<Unit>(addr).ResetMethod(write, access_check);
   }
 
   template <typename Unit>
-  void Register(u32 addr, ReadHandlingMethod<Unit>* read, WriteHandlingMethod<Unit>* write, AccessCheckFunc access_check = nullptr)
+  void Register(u32 addr, ReadHandlingMethod<Unit>* read, WriteHandlingMethod<Unit>* write,
+                AccessCheckFunc access_check = nullptr)
   {
     RegisterRead(addr, read, access_check);
     RegisterWrite(addr, write, access_check);

@@ -144,6 +144,16 @@ add_library(core
   HotkeyManager.h
   HW/AddressSpace.cpp
   HW/AddressSpace.h
+  HW/AHB/AESEngine.cpp
+  HW/AHB/AESEngine.h
+  HW/AHB/AHBMemBridge.cpp
+  HW/AHB/AHBMemBridge.h
+  HW/AHB/AHBMemoryController.cpp
+  HW/AHB/AHBMemoryController.h
+  HW/AHB/NANDInterface.cpp
+  HW/AHB/NANDInterface.h
+  HW/AHB/SHAEngine.cpp
+  HW/AHB/SHAEngine.h
   HW/AudioInterface.cpp
   HW/AudioInterface.h
   HW/CPU.cpp
@@ -460,11 +470,18 @@ add_library(core
   IOS/WFS/WFSSRV.cpp
   IOS/WFS/WFSSRV.h
   IOS_LLE/ARM_InstrInfo.cpp
+  IOS_LLE/ARM_InstrInfo.h
+  IOS_LLE/ARM_InstrTable.h
   IOS_LLE/ARM.cpp
+  IOS_LLE/ARM.h
   IOS_LLE/ARMInterpreter_ALU.cpp
+  IOS_LLE/ARMInterpreter_ALU.h
   IOS_LLE/ARMInterpreter_Branch.cpp
+  IOS_LLE/ARMInterpreter_Branch.h
   IOS_LLE/ARMInterpreter_LoadStore.cpp
+  IOS_LLE/ARMInterpreter_LoadStore.h
   IOS_LLE/ARMInterpreter.cpp
+  IOS_LLE/ARMInterpreter.h
   IOS_LLE/CP15.cpp
   LibusbUtils.cpp
   LibusbUtils.h
@@ -552,6 +569,8 @@ add_library(core
   TitleDatabase.h
   WC24PatchEngine.cpp
   WC24PatchEngine.h
+  WiiKeys.cpp
+  WiiKeys.h
   WiiRoot.cpp
   WiiRoot.h
   WiiUtils.cpp

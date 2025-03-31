@@ -20,78 +20,11 @@
 #include "Common/Crypto/AES.h"
 #include "Common/Crypto/SHA1.h"
 #include "Common/Crypto/ec.h"
-#include "Common/FileUtil.h"
-#include "Common/IOFile.h"
 #include "Common/ScopeGuard.h"
 #include "Common/Swap.h"
 #include "Core/IOS/Device.h"
 #include "Core/IOS/ES/Formats.h"
-
-namespace
-{
-#pragma pack(push, 1)
-/*
- * Structs for keys.bin taken from:
- *
- * mini - a Free Software replacement for the Nintendo/BroadOn IOS.
- * crypto hardware support
- *
- * Copyright (C) 2008, 2009 Haxx Enterprises <bushing@gmail.com>
- * Copyright (C) 2008, 2009 Sven Peter <svenpeter@gmail.com>
- * Copyright (C) 2008, 2009 Hector Martin "marcan" <marcan@marcansoft.com>
- *
- * # This code is licensed to you under the terms of the GNU GPL, version 2;
- * # see file COPYING or http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
- */
-struct BootMiiKeyDump
-{
-  std::array<char, 256> creator;
-  std::array<u8, 20> boot1_hash;  // 0x100
-  std::array<u8, 16> common_key;  // 0x114
-  u32 ng_id;                      // 0x124
-  union
-  {
-    struct
-    {
-      std::array<u8, 0x1e> ng_priv;  // 0x128
-      std::array<u8, 0x12> pad1;
-    };
-    struct
-    {
-      std::array<u8, 0x1c> pad2;
-      std::array<u8, 0x14> nand_hmac;  // 0x144
-    };
-  };
-  std::array<u8, 16> nand_key;      // 0x158
-  std::array<u8, 16> backup_key;    // 0x168
-  u32 unk1;                         // 0x178
-  u32 unk2;                         // 0x17C
-  std::array<u8, 0x80> eeprom_pad;  // 0x180
-
-  u32 ms_id;                     // 0x200
-  u32 ca_id;                     // 0x204
-  u32 ng_key_id;                 // 0x208
-  Common::ec::Signature ng_sig;  // 0x20c
-  struct Counter
-  {
-    u8 boot2version;
-    u8 unknown1;
-    u8 unknown2;
-    u8 pad;
-    u32 update_tag;
-    u16 checksum;
-  };
-  std::array<Counter, 2> counters;  // 0x248
-  std::array<u8, 0x18> fill;        // 0x25c
-  std::array<u8, 16> korean_key;    // 0x274
-  std::array<u8, 0x74> pad3;        // 0x284
-  std::array<u16, 2> prng_seed;     // 0x2F8
-  std::array<u8, 4> pad4;           // 0x2FC
-  std::array<u8, 0x100> crack_pad;  // 0x300
-};
-static_assert(sizeof(BootMiiKeyDump) == 0x400, "Wrong size");
-#pragma pack(pop)
-}  // end of anonymous namespace
+#include "Core/WiiKeys.h"
 
 namespace IOS::HLE
 {
@@ -205,10 +138,13 @@ static size_t GetSizeForType(IOSC::ObjectType type, IOSC::ObjectSubType subtype)
   return iterator != s_type_to_size_map.end() ? iterator->second : 0;
 }
 
-IOSC::IOSC(ConsoleType console_type) : m_console_type(console_type)
+IOSC::IOSC(const WiiKeys& keys, ConsoleType console_type) : m_console_type(console_type)
 {
   LoadDefaultEntries();
-  LoadEntries();
+  if (keys.IsValid())
+  {
+    LoadEntries(keys);
+  }
 }
 
 IOSC::~IOSC() = default;
@@ -624,21 +560,9 @@ void IOSC::LoadDefaultEntries()
                                           3};
 }
 
-void IOSC::LoadEntries()
+void IOSC::LoadEntries(const WiiKeys& keys)
 {
-  File::IOFile file{File::GetUserPath(D_WIIROOT_IDX) + "keys.bin", "rb"};
-  if (!file)
-  {
-    WARN_LOG_FMT(IOS, "keys.bin could not be found. Default values will be used.");
-    return;
-  }
-
-  BootMiiKeyDump dump;
-  if (!file.ReadBytes(&dump, sizeof(dump)))
-  {
-    ERROR_LOG_FMT(IOS, "Failed to read from keys.bin.");
-    return;
-  }
+  auto& dump = keys.GetBackupMiiKeys();
 
   m_key_entries[HANDLE_CONSOLE_KEY].data = {dump.ng_priv.begin(), dump.ng_priv.end()};
   m_console_signature = dump.ng_sig;

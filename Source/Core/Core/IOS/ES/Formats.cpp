@@ -32,6 +32,7 @@
 #include "Core/IOS/IOS.h"
 #include "Core/IOS/IOSC.h"
 #include "Core/IOS/Uids.h"
+#include "Core/WiiKeys.h"
 
 namespace IOS::ES
 {
@@ -473,7 +474,7 @@ std::array<u8, 16> TicketReader::GetTitleKey(const HLE::IOSC& iosc) const
 
 std::array<u8, 16> TicketReader::GetTitleKey() const
 {
-  return GetTitleKey(HLE::IOSC{GetConsoleType()});
+  return GetTitleKey(HLE::IOSC{WiiKeys{}, GetConsoleType()});
 }
 
 HLE::IOSC::ConsoleType TicketReader::GetConsoleType() const

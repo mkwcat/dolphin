@@ -32,8 +32,8 @@ namespace IOS::LLE::ARMInterpreter
 
 void A_UNK(ARM* cpu)
 {
-  //WARN_LOG_FMT(IOS_LLE, "undefined ARM9 instruction {:08x} @ {:08x}\n", cpu->CurInstr,
-   //            cpu->R[15] - 8);
+  // WARN_LOG_FMT(IOS_LLE, "undefined ARM9 instruction {:08x} @ {:08x}\n", cpu->CurInstr,
+  //             cpu->R[15] - 8);
 #ifdef GDBSTUB_ENABLED
   cpu->GdbStub.Enter(cpu->GdbStub.IsConnected(), Gdb::TgtStatus::FaultInsn, cpu->R[15] - 8);
 #endif
@@ -254,6 +254,8 @@ void A_MCR(ARM* cpu)
   u32 cm = cpu->CurInstr & 0xF;
   u32 cpinfo = (cpu->CurInstr >> 5) & 0x7;
 
+  // mcr xxx, 0, r0, cn, cm, cpinfo
+
   if (cp == 15)
   {
     ((ARMv5*)cpu)->CP15Write((cn << 8) | (cm << 4) | cpinfo, cpu->R[(cpu->CurInstr >> 12) & 0xF]);
@@ -293,6 +295,12 @@ void A_MRC(ARM* cpu)
 
 void A_SVC(ARM* cpu)
 {
+  // INFO_LOG_FMT(IOS_LLE, "SVC instruction {:08x} @ {:08x}\n", cpu->CurInstr, cpu->R[15] - 8);
+  if (cpu->R[0] == 4)
+  {
+    cpu->SVCWrite0(cpu->R[1]);
+  }
+
   u32 oldcpsr = cpu->CPSR;
   cpu->CPSR &= ~0xBF;
   cpu->CPSR |= 0x93;
@@ -305,6 +313,12 @@ void A_SVC(ARM* cpu)
 
 void T_SVC(ARM* cpu)
 {
+  // INFO_LOG_FMT(IOS_LLE, "SVC instruction {:04x} @ {:08x}\n", cpu->CurInstr, cpu->R[15] - 4 + 1);
+  if (cpu->R[0] == 4)
+  {
+    cpu->SVCWrite0(cpu->R[1]);
+  }
+
   u32 oldcpsr = cpu->CPSR;
   cpu->CPSR &= ~0xBF;
   cpu->CPSR |= 0x93;

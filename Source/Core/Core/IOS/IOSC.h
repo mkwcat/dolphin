@@ -18,6 +18,8 @@ class PointerWrap;
 
 namespace IOS
 {
+class WiiKeys;
+
 namespace ES
 {
 class CertReader;
@@ -185,7 +187,7 @@ public:
     Version = 6
   };
 
-  IOSC(ConsoleType console_type = ConsoleType::Retail);
+  IOSC(const WiiKeys& keys, ConsoleType console_type = ConsoleType::Retail);
   ~IOSC();
 
   // Create an object for use with the other functions that operate on objects.
@@ -253,7 +255,7 @@ private:
   };
 
   void LoadDefaultEntries();
-  void LoadEntries();
+  void LoadEntries(const WiiKeys& keys);
 
   KeyEntries::iterator FindFreeEntry();
   KeyEntry* FindEntry(Handle handle);

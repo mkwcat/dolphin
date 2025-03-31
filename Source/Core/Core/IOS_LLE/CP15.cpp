@@ -21,39 +21,27 @@
 #include "ARM.h"
 // #include "ARMJIT_Memory.h"
 // #include "ARMJIT.h"
+#include "Common/BitField.h"
+#include "Common/CommonTypes.h"
 #include "Common/Logging/Log.h"
+#include "Common/Unreachable.h"
 
 namespace IOS::LLE
 {
 
-// access timing for cached regions
-// this would be an average between cache hits and cache misses
-// this was measured to be close to hardware average
-// a value of 1 would represent a perfect cache, but that causes
-// games to run too fast, causing a number of issues
-const int kDataCacheTiming = 3;  // 2;
-const int kCodeCacheTiming = 3;  // 5;
+// const int kDataCacheTiming = 3;  // 2;
+// const int kCodeCacheTiming = 3;  // 5;
 
 void ARMv5::CP15Reset()
 {
   CP15Control = 0x2078;  // dunno
 
   RNGSeed = 44203;
-  TraceProcessID = 0;
+  m_reg_context_id = 0;
 
   memset(ICache, 0, 0x2000);
   ICacheInvalidateAll();
   memset(ICacheCount, 0, 64);
-
-  PU_CodeCacheable = 0;
-  PU_DataCacheable = 0;
-  PU_DataCacheWrite = 0;
-
-  PU_CodeRW = 0;
-  PU_DataRW = 0;
-
-  memset(PU_Region, 0, 8 * sizeof(u32));
-  UpdatePURegions(true);
 
   CurICacheLine = NULL;
 }
@@ -70,232 +58,185 @@ void ARMv5::CP15DoSavestate(Savestate* file)
 
     file->VarArray(ITCM, ITCMPhysicalSize);
     file->VarArray(DTCM, DTCMPhysicalSize);
-
-    file->Var32(&PU_CodeCacheable);
-    file->Var32(&PU_DataCacheable);
-    file->Var32(&PU_DataCacheWrite);
-
-    file->Var32(&PU_CodeRW);
-    file->Var32(&PU_DataRW);
-
-    file->VarArray(PU_Region, 8*sizeof(u32));
-
-    if (!file->Saving)
-    {
-        UpdateDTCMSetting();
-        UpdateITCMSetting();
-        UpdatePURegions(true);
-    }
 }
 #endif
 
-// covers updates to a specific PU region's cache/etc settings
-// (not to the region range/enabled status)
-void ARMv5::UpdatePURegion(u32 n)
+union TLBFirstLevel
 {
-  if (!(CP15Control & (1 << 0)))
-    return;
+  u32 m_hex = 0;
 
-  u32 coderw = (PU_CodeRW >> (4 * n)) & 0xF;
-  u32 datarw = (PU_DataRW >> (4 * n)) & 0xF;
+  BitField<20, 12, u32> m_base;
+  BitField<12, 20, u32> m_fine_base;
+  BitField<10, 22, u32> m_coarse_base;
 
-  u32 codecache, datacache, datawrite;
+  BitField<0, 2, u32> m_type;
 
-  // datacache/datawrite
-  // 0/0: goes to memory
-  // 0/1: goes to memory
-  // 1/0: goes to memory and cache
-  // 1/1: goes to cache
+  // Section descriptor
+  BitField<2, 1, u32> m_buffered;
+  BitField<3, 1, u32> m_cached;
+  BitField<5, 4, u32> m_domain;
+  BitField<9, 2, u32> m_ap;
 
-  if (CP15Control & (1 << 12))
-    codecache = (PU_CodeCacheable >> n) & 0x1;
-  else
-    codecache = 0;
+  explicit TLBFirstLevel(u32 hex) : m_hex(hex) {}
+  TLBFirstLevel() = default;
+};
 
-  if (CP15Control & (1 << 2))
+union TLBSecondLevel
+{
+  u32 m_hex = 0;
+
+  BitField<16, 16, u32> m_large_base;
+  BitField<12, 20, u32> m_small_base;
+  BitField<10, 22, u32> m_tiny_base;
+
+  BitField<0, 2, u32> m_type;
+  BitField<2, 1, u32> m_buffered;
+  BitField<3, 1, u32> m_cached;
+  BitField<4, 2, u32> m_ap;
+
+  explicit TLBSecondLevel(u32 hex) : m_hex(hex) {}
+  TLBSecondLevel() = default;
+};
+
+bool ARMv5::CheckAccessPermission(u32 ap, bool is_write)
+{
+  if (ap == 0b00)
   {
-    datacache = (PU_DataCacheable >> n) & 0x1;
-    datawrite = (PU_DataCacheWrite >> n) & 0x1;
-  }
-  else
-  {
-    datacache = 0;
-    datawrite = 0;
-  }
-
-  u32 rgn = PU_Region[n];
-  if (!(rgn & (1 << 0)))
-  {
-    return;
-  }
-
-  // notes:
-  // * min size of a pu region is 4KiB (12 bits)
-  // * size is calculated as size + 1, but the 12 lsb of address space are ignored, therefore we
-  // need it as size + 1 - 12, or size - 11
-  // * pu regions are aligned based on their size
-  u32 size = std::max((int)((rgn >> 1) & 0x1F) - 11,
-                      0);  // obtain the size, subtract 11 and clamp to a min of 0.
-  u32 start = ((rgn >> 12) >> size) << size;  // determine the start offset, and use shifts to force
-                                              // alignment with a multiple of the size.
-  u32 end = start + (1 << size);  // add 1 left shifted by size to start to determine end point
-  // dont need to bounds check the end point because the force alignment inherently prevents it from
-  // breaking
-
-  u8 usermask = 0;
-  u8 privmask = 0;
-
-  switch (datarw)
-  {
-  case 0:
-    break;
-  case 1:
-    privmask |= 0x03;
-    break;
-  case 2:
-    privmask |= 0x03;
-    usermask |= 0x01;
-    break;
-  case 3:
-    privmask |= 0x03;
-    usermask |= 0x03;
-    break;
-  case 5:
-    privmask |= 0x01;
-    break;
-  case 6:
-    privmask |= 0x01;
-    usermask |= 0x01;
-    break;
-  default:
-    WARN_LOG_FMT(IOS_LLE, "!! BAD DATARW VALUE {}\n", datarw & 0xF);
-  }
-
-  switch (coderw)
-  {
-  case 0:
-    break;
-  case 1:
-    privmask |= 0x04;
-    break;
-  case 2:
-    privmask |= 0x04;
-    usermask |= 0x04;
-    break;
-  case 3:
-    privmask |= 0x04;
-    usermask |= 0x04;
-    break;
-  case 5:
-    privmask |= 0x04;
-    break;
-  case 6:
-    privmask |= 0x04;
-    usermask |= 0x04;
-    break;
-  default:
-    WARN_LOG_FMT(IOS_LLE, "!! BAD CODERW VALUE {}\n", datarw & 0xF);
-  }
-
-  if (datacache & 0x1)
-  {
-    privmask |= 0x10;
-    usermask |= 0x10;
-
-    if (datawrite & 0x1)
+    // Special case for ROM data: check SR bits (flipped here) for read-only access.
+    if (is_write)
     {
-      privmask |= 0x20;
-      usermask |= 0x20;
+      return false;
+    }
+    switch ((CP15Control >> 8) & 0b11)
+    {
+    case 0b00:
+    case 0b11:
+      // No access.
+      return false;
+
+    case 0b10:
+      // Read-only access.
+      return true;
+
+    case 0b01:
+      // Read-only if privileged.
+      return !!(CPSR & 0b1111);
     }
   }
 
-  if (codecache & 0x1)
+  // Can always access everything in a privileged mode.
+  if (CPSR & 0b1111)
   {
-    privmask |= 0x40;
-    usermask |= 0x40;
+    return true;
   }
 
-  DEBUG_LOG_FMT(IOS_LLE, "PU region {}: {:08x}-{:08x}, user={:02x), priv={:02x}, {:08x}/{:08x}\n",
-                n, start << 12, (end << 12) - 1, usermask, privmask, PU_DataRW, PU_CodeRW);
-
-  for (u32 i = start; i < end; i++)
+  // dac == 0b01, check access permission bits.
+  switch (ap)
   {
-    PU_UserMap[i] = usermask;
-    PU_PrivMap[i] = privmask;
-  }
+  default:
+  case 0b01:
+    // No access.
+    return false;
 
-  // UpdateRegionTimings(start, end);
+  case 0b10:
+    // Read-only access.
+    return !is_write;
+
+  case 0b11:
+    // Read-write access.
+    return true;
+  }
 }
 
-void ARMv5::UpdatePURegions(bool update_all)
+bool ARMv5::TranslateAddress(u32& addr, bool is_write)
 {
-  if (!(CP15Control & (1 << 0)))
+  if (!(CP15Control & 0x5))
+    return true;
+
+  const u32 first_level_offset = (addr >> 20) & 0xFFF;
+
+  // Fetch first-level descriptor
+  const TLBFirstLevel first(BusRead32(m_reg_ttbr | (first_level_offset << 2)));
+  if (first.m_type == 0b00)
   {
-    // PU disabled
-
-    u8 mask = 0x07;
-    if (CP15Control & (1 << 2))
-      mask |= 0x30;
-    if (CP15Control & (1 << 12))
-      mask |= 0x40;
-
-    memset(PU_UserMap, mask, 0x100000);
-    memset(PU_PrivMap, mask, 0x100000);
-
-    // UpdateRegionTimings(0x00000, 0x100000);
-    return;
+    // Fault
+    ERROR_LOG_FMT(IOS_LLE, "TLB fault for address {:08x} (domain {:x})", addr, first.m_domain);
+    return false;
   }
 
-  if (update_all)
+  u32 dac = (m_reg_dacr >> (first.m_domain * 2)) & 0b11;
+  if (dac == 0b00 || dac == 0b10)
   {
-    memset(PU_UserMap, 0, 0x100000);
-    memset(PU_PrivMap, 0, 0x100000);
+    return false;
   }
 
-  for (int n = 0; n < 8; n++)
+  bool is_manager = dac == 0b11;
+  u32 second_level_offset = 0;
+
+  switch (first.m_type)
   {
-    UpdatePURegion(n);
-  }
+  case 0b00:  // Fault
+    return false;
 
-  // TODO: this is way unoptimized
-  // should be okay unless the game keeps changing shit, tho
-  // if (update_all) UpdateRegionTimings(0x00000, 0x100000);
-
-  // TODO: throw exception if the region we're running in has become non-executable, I guess
-}
-
-#if 0
-void ARMv5::UpdateRegionTimings(u32 addrstart, u32 addrend)
-{
-    for (u32 i = addrstart; i < addrend; i++)
+  case 0b10:  // Section
+  {
+    if (!is_manager && !CheckAccessPermission(first.m_ap, is_write))
     {
-        u8 pu = PU_Map[i];
-        u8* bustimings = NDS.ARM9MemTimings[i >> 2];
-
-        if (pu & 0x40)
-        {
-            MemTimings[i][0] = 0xFF;//kCodeCacheTiming;
-        }
-        else
-        {
-            MemTimings[i][0] = bustimings[2] << NDS.ARM9ClockShift;
-        }
-
-        if (pu & 0x10)
-        {
-            MemTimings[i][1] = kDataCacheTiming;
-            MemTimings[i][2] = kDataCacheTiming;
-            MemTimings[i][3] = 1;
-        }
-        else
-        {
-            MemTimings[i][1] = bustimings[0] << NDS.ARM9ClockShift;
-            MemTimings[i][2] = bustimings[2] << NDS.ARM9ClockShift;
-            MemTimings[i][3] = bustimings[3] << NDS.ARM9ClockShift;
-        }
+      // Permission denied
+      ERROR_LOG_FMT(IOS_LLE, "TLB permission denied for address {:08x} (ap {:x}, domain {:x})",
+                    addr, first.m_ap, first.m_domain);
+      return false;
     }
+
+    // Mask address together
+    addr = (first.m_base << 20) | (addr & 0x000FFFFF);
+    return true;
+  }
+
+  case 0b01:  // Coarse page table (0xXXXFF000)
+    second_level_offset = (first.m_coarse_base << 10) | ((addr >> 10) & 0x3FC);
+    break;
+
+  case 0b11:  // Fine page table (0xXXXFFC00)
+    second_level_offset = (first.m_fine_base << 12) | ((addr >> 8) & 0xFFC);
+    break;
+  }
+
+  // Fetch second-level descriptor
+  const TLBSecondLevel second(BusRead32(second_level_offset));
+  if (second.m_type == 0b00)
+  {
+    // Fault
+    ERROR_LOG_FMT(IOS_LLE, "TLB fault for address {:08x} (domain {:x})", addr, first.m_domain);
+    return false;
+  }
+
+  if (!is_manager && !CheckAccessPermission(second.m_ap, is_write))
+  {
+    // Permission denied
+    ERROR_LOG_FMT(IOS_LLE, "TLB permission denied for address {:08x} (ap {:x}, domain {:x})", addr,
+                  second.m_ap, first.m_domain);
+    return false;
+  }
+
+  // Mask address together
+  switch (second.m_type)
+  {
+  case 0b01:  // Large page
+    addr = (second.m_large_base << 16) | (addr & 0x0000FFFF);
+    return true;
+
+  case 0b10:  // Small page
+    addr = (second.m_small_base << 12) | (addr & 0x00000FFF);
+    return true;
+
+  case 0b11:  // Tiny page
+    addr = (second.m_tiny_base << 10) | (addr & 0x000003FF);
+    return true;
+  }
+
+  Common::Unreachable();
 }
-#endif
 
 u32 ARMv5::RandomLineIndex()
 {
@@ -425,10 +366,6 @@ void ARMv5::CP15Write(u32 id, u32 val)
     CP15Control &= ~0x000FF085;
     CP15Control |= val;
     // printf("CP15Control = %08X (%08X->%08X)\n", CP15Control, old, val);
-    if ((old & 0x1005) != (val & 0x1005))
-    {
-      UpdatePURegions((old & 0x1) != (val & 0x1));
-    }
     // if (val & (1<<7)) WARN_LOG_FMT(IOS_LLE, "!!!! ARM9 BIG ENDIAN MODE. VERY BAD. SHIT GONNA
     // ASPLODE NOW\n");
     if (val & (1 << 13))
@@ -438,135 +375,24 @@ void ARMv5::CP15Write(u32 id, u32 val)
   }
     return;
 
-  case 0x200:  // data cacheable
-  {
-    u32 diff = PU_DataCacheable ^ val;
-    PU_DataCacheable = val;
-    for (u32 i = 0; i < 8; i++)
-    {
-      if (diff & (1 << i))
-        UpdatePURegion(i);
-    }
-  }
+  case 0x200:  // TTBR (Translation Table Base Register)
+    m_reg_ttbr = val;
     return;
 
-  case 0x201:  // code cacheable
-  {
-    u32 diff = PU_CodeCacheable ^ val;
-    PU_CodeCacheable = val;
-    for (u32 i = 0; i < 8; i++)
-    {
-      if (diff & (1 << i))
-        UpdatePURegion(i);
-    }
-  }
+  case 0x300:  // DACR (Domain Access Control Register)
+    m_reg_dacr = val;
     return;
 
-  case 0x300:  // data cache write-buffer
-  {
-    u32 diff = PU_DataCacheWrite ^ val;
-    PU_DataCacheWrite = val;
-    for (u32 i = 0; i < 8; i++)
-    {
-      if (diff & (1 << i))
-        UpdatePURegion(i);
-    }
-  }
+  case 0x500:  // DFSR (Data Fault Status Register)
+    m_reg_dfsr = val;
     return;
 
-  case 0x500:  // legacy data permissions
-  {
-    u32 old = PU_DataRW;
-    PU_DataRW = 0;
-    PU_DataRW |= (val & 0x0003);
-    PU_DataRW |= ((val & 0x000C) << 2);
-    PU_DataRW |= ((val & 0x0030) << 4);
-    PU_DataRW |= ((val & 0x00C0) << 6);
-    PU_DataRW |= ((val & 0x0300) << 8);
-    PU_DataRW |= ((val & 0x0C00) << 10);
-    PU_DataRW |= ((val & 0x3000) << 12);
-    PU_DataRW |= ((val & 0xC000) << 14);
-    u32 diff = old ^ PU_DataRW;
-    for (u32 i = 0; i < 8; i++)
-    {
-      if (diff & (0xF << (i * 4)))
-        UpdatePURegion(i);
-    }
-  }
+  case 0x501:  // IFSR (Instruction Fault Status Register)
+    m_reg_ifsr = val;
     return;
 
-  case 0x501:  // legacy code permissions
-  {
-    u32 old = PU_CodeRW;
-    PU_CodeRW = 0;
-    PU_CodeRW |= (val & 0x0003);
-    PU_CodeRW |= ((val & 0x000C) << 2);
-    PU_CodeRW |= ((val & 0x0030) << 4);
-    PU_CodeRW |= ((val & 0x00C0) << 6);
-    PU_CodeRW |= ((val & 0x0300) << 8);
-    PU_CodeRW |= ((val & 0x0C00) << 10);
-    PU_CodeRW |= ((val & 0x3000) << 12);
-    PU_CodeRW |= ((val & 0xC000) << 14);
-    u32 diff = old ^ PU_CodeRW;
-    for (u32 i = 0; i < 8; i++)
-    {
-      if (diff & (0xF << (i * 4)))
-        UpdatePURegion(i);
-    }
-  }
-    return;
-
-  case 0x502:  // data permissions
-  {
-    u32 diff = PU_DataRW ^ val;
-    PU_DataRW = val;
-    for (u32 i = 0; i < 8; i++)
-    {
-      if (diff & (0xF << (i * 4)))
-        UpdatePURegion(i);
-    }
-  }
-    return;
-
-  case 0x503:  // code permissions
-  {
-    u32 diff = PU_CodeRW ^ val;
-    PU_CodeRW = val;
-    for (u32 i = 0; i < 8; i++)
-    {
-      if (diff & (0xF << (i * 4)))
-        UpdatePURegion(i);
-    }
-  }
-    return;
-
-  case 0x600:
-  case 0x601:
-  case 0x610:
-  case 0x611:
-  case 0x620:
-  case 0x621:
-  case 0x630:
-  case 0x631:
-  case 0x640:
-  case 0x641:
-  case 0x650:
-  case 0x651:
-  case 0x660:
-  case 0x661:
-  case 0x670:
-  case 0x671:
-    char log_output[1024];
-    PU_Region[(id >> 4) & 0xF] = val;
-
-    std::snprintf(log_output, sizeof(log_output),
-                  "PU: region %d = %08X : %s, start: %08X size: %02X\n", (id >> 4) & 0xF, val,
-                  val & 1 ? "enabled" : "disabled", val & 0xFFFFF000, (val & 0x3E) >> 1);
-    DEBUG_LOG_FMT(IOS_LLE, "{}", log_output);
-    // Some implementations of Log imply a newline, so we build up the line before printing it
-
-    // TODO: smarter region update for this?
-    UpdatePURegions(true);
+  case 0x600:  // FAR (Fault Address Register)
+    m_reg_far = val;
     return;
 
   case 0x704:
@@ -601,6 +427,9 @@ void ARMv5::CP15Write(u32 id, u32 val)
     // printf("flush data cache SI\n");
     return;
 
+  case 0x7A4:  // Drain write buffer
+    return;
+
     // case 0x910:
     //     DTCMSetting = val & 0xFFFFF03E;
     //     UpdateDTCMSetting();
@@ -611,8 +440,15 @@ void ARMv5::CP15Write(u32 id, u32 val)
     //     UpdateITCMSetting();
     //     return;
 
-  case 0xD01:
-    TraceProcessID = val;
+  case 0x870:  // Invalidate TLB
+    return;
+
+  case 0xD00:  // FSCE PID
+    m_reg_fcse_pid = val;
+    return;
+
+  case 0xD01:  // Context ID
+    m_reg_context_id = val;
     return;
 
   case 0xF00:
@@ -660,75 +496,31 @@ u32 ARMv5::CP15Read(u32 id) const
   case 0x001:  // cache type
     return 0x0F0D2112;
 
-  case 0x002:  // TCM size
-    return (6 << 6) | (5 << 18);
-
   case 0x100:  // control reg
     return CP15Control;
 
-  case 0x200:
-    return PU_DataCacheable;
-  case 0x201:
-    return PU_CodeCacheable;
-  case 0x300:
-    return PU_DataCacheWrite;
+  case 0x200:  // TTBR (Translation Table Base Register)
+    return m_reg_ttbr;
 
-  case 0x500:
-  {
-    u32 ret = 0;
-    ret |= (PU_DataRW & 0x00000003);
-    ret |= ((PU_DataRW & 0x00000030) >> 2);
-    ret |= ((PU_DataRW & 0x00000300) >> 4);
-    ret |= ((PU_DataRW & 0x00003000) >> 6);
-    ret |= ((PU_DataRW & 0x00030000) >> 8);
-    ret |= ((PU_DataRW & 0x00300000) >> 10);
-    ret |= ((PU_DataRW & 0x03000000) >> 12);
-    ret |= ((PU_DataRW & 0x30000000) >> 14);
-    return ret;
-  }
-  case 0x501:
-  {
-    u32 ret = 0;
-    ret |= (PU_CodeRW & 0x00000003);
-    ret |= ((PU_CodeRW & 0x00000030) >> 2);
-    ret |= ((PU_CodeRW & 0x00000300) >> 4);
-    ret |= ((PU_CodeRW & 0x00003000) >> 6);
-    ret |= ((PU_CodeRW & 0x00030000) >> 8);
-    ret |= ((PU_CodeRW & 0x00300000) >> 10);
-    ret |= ((PU_CodeRW & 0x03000000) >> 12);
-    ret |= ((PU_CodeRW & 0x30000000) >> 14);
-    return ret;
-  }
-  case 0x502:
-    return PU_DataRW;
-  case 0x503:
-    return PU_CodeRW;
+  case 0x300:  // DACR (Domain Access Control Register)
+    return m_reg_dacr;
 
-  case 0x600:
-  case 0x601:
-  case 0x610:
-  case 0x611:
-  case 0x620:
-  case 0x621:
-  case 0x630:
-  case 0x631:
-  case 0x640:
-  case 0x641:
-  case 0x650:
-  case 0x651:
-  case 0x660:
-  case 0x661:
-  case 0x670:
-  case 0x671:
-    return PU_Region[(id >> 4) & 0xF];
+  case 0x500:  // DFSR (Data Fault Status Register)
+    return m_reg_dfsr;
+
+  case 0x501:  // IFSR (Instruction Fault Status Register)
+    return m_reg_ifsr;
+
+  case 0x600:  // FAR (Fault Address Register)
+    return m_reg_far;
 
     // case 0x910:
     //     return DTCMSetting;
     // case 0x911:
     //     return ITCMSetting;
 
-  case 0xD01:
-    return TraceProcessID;
+  case 0xD01:  // Context ID
+    return m_reg_context_id;
   }
 
   if ((id & 0xF00) == 0xF00)  // test/debug shit?
@@ -767,13 +559,21 @@ u32 ARMv5::CodeRead32(u32 addr, bool branch)
     if (CodeMem.Mem) return *(u32*)&CodeMem.Mem[addr & CodeMem.Mask];
 #endif
 
+  if (addr & 3 || (CP15Control & 0x5 && !TranslateAddress(addr, false)))
+  {
+    m_reg_far = addr;
+    PrefetchAbort();
+    return 0;
+  }
+
   return BusRead32(addr);
 }
 
 void ARMv5::DataRead8(u32 addr, u32* val)
 {
-  if (!(PU_Map[addr >> 12] & 0x01))
+  if (CP15Control & 0x5 && !TranslateAddress(addr, false))
   {
+    m_reg_far = addr;
     DataAbort();
     return;
   }
@@ -781,14 +581,15 @@ void ARMv5::DataRead8(u32 addr, u32* val)
   DataRegion = addr;
 
   *val = BusRead8(addr);
-  WARN_LOG_FMT(IOS_LLE, "DataRead8: {:08x} = {:02x}\n", addr, *val);
+  // WARN_LOG_FMT(IOS_LLE, "DataRead8: {:08x} = {:02x}\n", addr, *val);
   // DataCycles = MemTimings[addr >> 12][1];
 }
 
 void ARMv5::DataRead16(u32 addr, u32* val)
 {
-  if ((CP15Control & 0x5) && !(PU_Map[addr >> 12] & 0x01))
+  if (addr & 1 || !TranslateAddress(addr, false))
   {
+    m_reg_far = addr;
     DataAbort();
     return;
   }
@@ -798,14 +599,15 @@ void ARMv5::DataRead16(u32 addr, u32* val)
   addr &= ~1;
 
   *val = BusRead16(addr);
-    WARN_LOG_FMT(IOS_LLE, "DataRead16: {:08x} = {:04x}\n", addr, *val);
+  // WARN_LOG_FMT(IOS_LLE, "DataRead16: {:08x} = {:04x}\n", addr, *val);
   // DataCycles = MemTimings[addr >> 12][1];
 }
 
 void ARMv5::DataRead32(u32 addr, u32* val)
 {
-  if ((CP15Control & 0x5) && !(PU_Map[addr >> 12] & 0x01))
+  if (addr & 3 || !TranslateAddress(addr, false))
   {
+    m_reg_far = addr;
     DataAbort();
     return;
   }
@@ -815,7 +617,7 @@ void ARMv5::DataRead32(u32 addr, u32* val)
   addr &= ~3;
 
   *val = BusRead32(addr);
-   WARN_LOG_FMT(IOS_LLE, "DataRead32: {:08x} = {:08x}\n", addr, *val);
+  // WARN_LOG_FMT(IOS_LLE, "DataRead32: {:08x} = {:08x}\n", addr, *val);
   // DataCycles = MemTimings[addr >> 12][2];
 }
 
@@ -829,8 +631,9 @@ void ARMv5::DataRead32S(u32 addr, u32* val)
 
 void ARMv5::DataWrite8(u32 addr, u8 val)
 {
-  if ((CP15Control & 0x5) && !(PU_Map[addr >> 12] & 0x02))
+  if (!TranslateAddress(addr, true))
   {
+    m_reg_far = addr;
     DataAbort();
     return;
   }
@@ -843,8 +646,9 @@ void ARMv5::DataWrite8(u32 addr, u8 val)
 
 void ARMv5::DataWrite16(u32 addr, u16 val)
 {
-  if ((CP15Control & 0x5) && !(PU_Map[addr >> 12] & 0x02))
+  if (addr & 1 || !TranslateAddress(addr, true))
   {
+    m_reg_far = addr;
     DataAbort();
     return;
   }
@@ -859,8 +663,9 @@ void ARMv5::DataWrite16(u32 addr, u16 val)
 
 void ARMv5::DataWrite32(u32 addr, u32 val)
 {
-  if ((CP15Control & 0x5) && !(PU_Map[addr >> 12] & 0x02))
+  if (addr & 3 || !TranslateAddress(addr, true))
   {
+    m_reg_far = addr;
     DataAbort();
     return;
   }

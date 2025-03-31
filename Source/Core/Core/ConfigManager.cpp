@@ -372,7 +372,7 @@ struct SetGameMetadata
 
   bool operator()(const BootParameters::NANDTitle& nand_title) const
   {
-    IOS::HLE::Kernel ios;
+    IOS::HLE::Kernel ios(system);
     const IOS::ES::TMDReader tmd = ios.GetESCore().FindInstalledTMD(nand_title.id);
     if (!tmd.IsValid() || !IOS::ES::IsChannel(nand_title.id))
     {

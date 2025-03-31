@@ -58,10 +58,10 @@
 #include "Core/IOS/VersionInfo.h"
 #include "Core/IOS/WFS/WFSI.h"
 #include "Core/IOS/WFS/WFSSRV.h"
+#include "Core/IOS_LLE/ARM.h"
 #include "Core/PowerPC/PowerPC.h"
 #include "Core/System.h"
 #include "Core/WiiRoot.h"
-#include "Core/IOS_LLE/ARM.h"
 
 namespace IOS::HLE
 {
@@ -278,11 +278,12 @@ void WriteReturnValue(Memory::MemoryManager& memory, s32 value, u32 address)
   memory.Write_U32(static_cast<u32>(value), address);
 }
 
-Kernel::Kernel(IOSC::ConsoleType console_type) : m_iosc(console_type)
+Kernel::Kernel(Core::System& system, IOSC::ConsoleType console_type)
+    : m_iosc(system.GetWiiKeys(), console_type)
 {
   // Until the Wii root and NAND path stuff is entirely managed by IOS and made non-static,
   // using more than one IOS instance at a time is not supported.
-  ASSERT(Core::System::GetInstance().GetIOS() == nullptr);
+  ASSERT(system.GetIOS() == nullptr);
 
   m_is_responsible_for_nand_root = !Core::WiiRootIsInitialized();
   if (m_is_responsible_for_nand_root)
@@ -301,12 +302,13 @@ Kernel::~Kernel()
     Core::ShutdownWiiRoot();
 }
 
-Kernel::Kernel(u64 title_id) : m_title_id(title_id)
+Kernel::Kernel(Core::System& system, u64 title_id)
+    : m_title_id(title_id), m_iosc(system.GetWiiKeys())
 {
 }
 
 EmulationKernel::EmulationKernel(Core::System& system, u64 title_id)
-    : Kernel(title_id), m_system(system)
+    : Kernel(system, title_id), m_system(system)
 {
   INFO_LOG_FMT(IOS, "Starting IOS {:016x}", title_id);
 
@@ -544,7 +546,7 @@ bool EmulationKernel::BootIOS(const u64 ios_title_id, HangPPC hang_ppc,
     // Start the ARM processor
     auto& arm = m_system.GetARM9();
     arm.Reset();
-    arm.CPSR = 0xF; // Set to system mode
+    arm.CPSR = 0xF;  // Set to system mode
     arm.JumpTo(0x10100010, false);
     arm.Running = true;
 
