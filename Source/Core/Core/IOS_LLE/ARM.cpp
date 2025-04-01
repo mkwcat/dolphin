@@ -1292,33 +1292,6 @@ bool ARMv5::HostIsRAMAddress(u32 addr)
   return false;
 }
 
-void ARM::SVCWrite0(u32 addr)
-{
-  ARMv5* v5 = static_cast<ARMv5*>(this);
 
-  while (true)
-  {
-    if (!v5->HostIsRAMAddress(addr))
-      break;
-
-    u32 v;
-    v5->DataRead8(addr, &v);
-
-    if (v == 0)
-      break;
-
-    if (v == '\n')
-    {
-      INFO_LOG_FMT(IOS_LLE, "IOS REPORT: {:s}", m_svc_write_buffer.data());
-      m_svc_write_buffer.clear();
-    }
-    else if (v != '\r')
-    {
-      m_svc_write_buffer.push_back(v);
-    }
-
-    addr += 1;
-  }
-}
 
 }  // namespace IOS::LLE

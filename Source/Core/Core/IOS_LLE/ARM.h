@@ -207,11 +207,11 @@ public:
   Gdb::GdbStub GdbStub;
 #endif
 
-void SVCWrite0(u32 addr);
+  void SVCWrite0(u32 addr);
+  void LogSyscall(u32 instr);
 
 protected:
   std::string m_svc_write_buffer;
-
 
   virtual u8 BusRead8(u32 addr) = 0;
   virtual u16 BusRead16(u32 addr) = 0;

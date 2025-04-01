@@ -76,7 +76,7 @@ void MemoryManager::InitMMIO(bool is_wii)
     m_system.GetAudioInterface().RegisterMMIO(m_mmio_mapping.get(), 0x0D006C00);
     m_system.GetAHBMemBridgeInterface().RegisterMMIO(m_mmio_mapping.get(), 0x0D000000);
     m_system.GetAHBMemoryController().RegisterMMIO(m_mmio_mapping.get(), 0x0D000000);
-    m_system.GetNANDInterface().RegisterMMIO(m_mmio_mapping.get(), 0x0D000000);
+    m_system.GetNANDInterface().RegisterMMIO(m_mmio_mapping.get(), 0x0D010000);
     m_system.GetAESEngine().RegisterMMIO(m_mmio_mapping.get(), 0x0D020000);
     m_system.GetSHAEngine().RegisterMMIO(m_mmio_mapping.get(), 0x0D030000);
   }
@@ -435,7 +435,7 @@ u8* MemoryManager::GetPointerForRange(u32 address, size_t size) const
   return span.data();
 }
 
-void MemoryManager::CopyFromEmu(void* data, u32 address, size_t size) const
+void MemoryManager::CopyFromEmu(void* data, u32 address, size_t size, bool privileged) const
 {
   if (size == 0)
     return;
@@ -449,7 +449,7 @@ void MemoryManager::CopyFromEmu(void* data, u32 address, size_t size) const
   memcpy(data, pointer, size);
 }
 
-void MemoryManager::CopyToEmu(u32 address, const void* data, size_t size)
+void MemoryManager::CopyToEmu(u32 address, const void* data, size_t size, bool privileged)
 {
   if (size == 0)
     return;
@@ -463,7 +463,7 @@ void MemoryManager::CopyToEmu(u32 address, const void* data, size_t size)
   memcpy(pointer, data, size);
 }
 
-void MemoryManager::Memset(u32 address, u8 value, size_t size)
+void MemoryManager::Memset(u32 address, u8 value, size_t size, bool privileged)
 {
   if (size == 0)
     return;
@@ -527,65 +527,65 @@ std::span<u8> MemoryManager::GetSpanForAddress(u32 address) const
   return {};
 }
 
-u8 MemoryManager::Read_U8(u32 address) const
+u8 MemoryManager::Read_U8(u32 address, bool privileged) const
 {
   u8 value = 0;
-  CopyFromEmu(&value, address, sizeof(value));
+  CopyFromEmu(&value, address, sizeof(value), privileged);
   return value;
 }
 
-u16 MemoryManager::Read_U16(u32 address) const
+u16 MemoryManager::Read_U16(u32 address, bool privileged) const
 {
   u16 value = 0;
-  CopyFromEmu(&value, address, sizeof(value));
+  CopyFromEmu(&value, address, sizeof(value), privileged);
   return Common::swap16(value);
 }
 
-u32 MemoryManager::Read_U32(u32 address) const
+u32 MemoryManager::Read_U32(u32 address, bool privileged) const
 {
   u32 value = 0;
-  CopyFromEmu(&value, address, sizeof(value));
+  CopyFromEmu(&value, address, sizeof(value), privileged);
   return Common::swap32(value);
 }
 
-u64 MemoryManager::Read_U64(u32 address) const
+u64 MemoryManager::Read_U64(u32 address, bool privileged) const
 {
   u64 value = 0;
-  CopyFromEmu(&value, address, sizeof(value));
+  CopyFromEmu(&value, address, sizeof(value), privileged);
   return Common::swap64(value);
 }
 
-void MemoryManager::Write_U8(u8 value, u32 address)
+void MemoryManager::Write_U8(u8 value, u32 address, bool privileged)
 {
-  CopyToEmu(address, &value, sizeof(value));
+  CopyToEmu(address, &value, sizeof(value), privileged);
 }
 
-void MemoryManager::Write_U16(u16 value, u32 address)
+void MemoryManager::Write_U16(u16 value, u32 address, bool privileged)
 {
   u16 swapped_value = Common::swap16(value);
-  CopyToEmu(address, &swapped_value, sizeof(swapped_value));
+  CopyToEmu(address, &swapped_value, sizeof(swapped_value), privileged);
 }
 
-void MemoryManager::Write_U32(u32 value, u32 address)
+void MemoryManager::Write_U32(u32 value, u32 address, bool privileged)
 {
   u32 swapped_value = Common::swap32(value);
-  CopyToEmu(address, &swapped_value, sizeof(swapped_value));
+  CopyToEmu(address, &swapped_value, sizeof(swapped_value), privileged);
 }
 
-void MemoryManager::Write_U64(u64 value, u32 address)
+void MemoryManager::Write_U64(u64 value, u32 address, bool privileged)
 {
   u64 swapped_value = Common::swap64(value);
-  CopyToEmu(address, &swapped_value, sizeof(swapped_value));
+  CopyToEmu(address, &swapped_value, sizeof(swapped_value), privileged);
 }
 
-void MemoryManager::Write_U32_Swap(u32 value, u32 address)
+void MemoryManager::Write_U32_Swap(u32 value, u32 address, bool privileged)
 {
-  CopyToEmu(address, &value, sizeof(value));
+  CopyToEmu(address, &value, sizeof(value), privileged);
 }
 
-void MemoryManager::Write_U64_Swap(u64 value, u32 address)
+void MemoryManager::Write_U64_Swap(u64 value, u32 address, bool privileged)
 {
-  CopyToEmu(address, &value, sizeof(value));
+  CopyToEmu(address, &value, sizeof(value), privileged);
 }
 
 }  // namespace Memory

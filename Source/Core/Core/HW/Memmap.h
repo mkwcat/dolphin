@@ -119,23 +119,23 @@ public:
   // of the corresponding range in host memory. Otherwise, returns nullptr.
   u8* GetPointerForRange(u32 address, size_t size) const;
 
-  void CopyFromEmu(void* data, u32 address, size_t size) const;
-  void CopyToEmu(u32 address, const void* data, size_t size);
-  void Memset(u32 address, u8 value, size_t size);
-  u8 Read_U8(u32 address) const;
-  u16 Read_U16(u32 address) const;
-  u32 Read_U32(u32 address) const;
-  u64 Read_U64(u32 address) const;
-  void Write_U8(u8 var, u32 address);
-  void Write_U16(u16 var, u32 address);
-  void Write_U32(u32 var, u32 address);
-  void Write_U64(u64 var, u32 address);
-  void Write_U32_Swap(u32 var, u32 address);
-  void Write_U64_Swap(u64 var, u32 address);
+  void CopyFromEmu(void* data, u32 address, size_t size, bool privileged = false) const;
+  void CopyToEmu(u32 address, const void* data, size_t size, bool privileged = false);
+  void Memset(u32 address, u8 value, size_t size, bool privileged = false);
+  u8 Read_U8(u32 address, bool privileged = false) const;
+  u16 Read_U16(u32 address, bool privileged = false) const;
+  u32 Read_U32(u32 address, bool privileged = false) const;
+  u64 Read_U64(u32 address, bool privileged = false) const;
+  void Write_U8(u8 var, u32 address, bool privileged = false);
+  void Write_U16(u16 var, u32 address, bool privileged = false);
+  void Write_U32(u32 var, u32 address, bool privileged = false);
+  void Write_U64(u64 var, u32 address, bool privileged = false);
+  void Write_U32_Swap(u32 var, u32 address, bool privileged = false);
+  void Write_U64_Swap(u64 var, u32 address, bool privileged = false);
 
   // Templated functions for byteswapped copies.
   template <typename T>
-  void CopyFromEmuSwapped(T* data, u32 address, size_t size) const
+  void CopyFromEmuSwapped(T* data, u32 address, size_t size, bool privileged = false) const
   {
     const T* src = reinterpret_cast<T*>(GetPointerForRange(address, size));
 
@@ -147,7 +147,7 @@ public:
   }
 
   template <typename T>
-  void CopyToEmuSwapped(u32 address, const T* data, size_t size)
+  void CopyToEmuSwapped(u32 address, const T* data, size_t size, bool privileged = false)
   {
     T* dest = reinterpret_cast<T*>(GetPointerForRange(address, size));
 

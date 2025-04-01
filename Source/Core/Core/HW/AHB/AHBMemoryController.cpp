@@ -191,7 +191,7 @@ void AHBMemoryController::RegisterMMIO(MMIO::Mapping* mmio, u32 base)
   mmio->Register(base | MEM_AHMFLUSH, MMIO::DirectRead<u16>(&m_ahmflush),
                  MMIO::ComplexWrite<u16>([](Core::System& system, u32, u16 val) {
                    auto& ahb = system.GetAHBMemoryController();
-                   if (val != 0)
+                   if (val != 0 && false)
                    {
                      bool iop = val & 0x1;
                      bool crypto = val & 0x2;

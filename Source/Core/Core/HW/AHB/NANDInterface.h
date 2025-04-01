@@ -5,6 +5,7 @@
 
 #include "Common/BitField.h"
 #include "Common/CommonTypes.h"
+#include "Core/CoreTiming.h"
 
 namespace Core
 {
@@ -82,7 +83,7 @@ union NANDAddr2Reg
 class NANDInterfaceManager
 {
 public:
-  explicit NANDInterfaceManager();
+  explicit NANDInterfaceManager(Core::System& system);
   NANDInterfaceManager(const NANDInterfaceManager&) = delete;
   NANDInterfaceManager(NANDInterfaceManager&&) = delete;
   NANDInterfaceManager& operator=(const NANDInterfaceManager&) = delete;
@@ -92,14 +93,20 @@ public:
   void Init();
   void Reset();
   void RegisterMMIO(MMIO::Mapping* mmio, u32 base);
+  void ExecuteCommand(NANDCtrlReg ctrl);
 
 private:
+  static void ExecuteCommandCallback(Core::System& system, u64 userdata, s64 cycles_late);
+
   NANDCtrlReg m_ctrl;
   NANDConfigReg m_config;
   NANDAddr1Reg m_addr1;
   NANDAddr2Reg m_addr2;
   u32 m_databuf_addr;
   u32 m_eccbuf_addr;
+
+  Core::System& m_system;
+  CoreTiming::EventType* m_event_handle_nand_command = nullptr;
 };
 
 }  // namespace NANDInterface

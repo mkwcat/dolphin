@@ -267,7 +267,8 @@ void WiiIPC::TriggerIRQ(StarletInterruptCause cause)
   m_ppc_irq_flags |= cause;
   m_arm_irq_flags |= cause;
 
-  m_system.GetCoreTiming().ScheduleEvent(0, m_event_type_update_interrupts, 0);
+  m_system.GetCoreTiming().ScheduleEvent(0, m_event_type_update_interrupts, 0,
+                                         CoreTiming::FromThread::ANY);
 }
 
 void WiiIPC::RegisterMMIO(MMIO::Mapping* mmio, u32 base)

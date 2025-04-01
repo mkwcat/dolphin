@@ -52,6 +52,7 @@ enum class LogType : int
   MASTER_LOG,
   MEMMAP,
   MEMCARD_MANAGER,
+  NAND,
   NETPLAY,
   OSHLE,
   OSREPORT,

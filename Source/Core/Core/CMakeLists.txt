@@ -483,6 +483,7 @@ add_library(core
   IOS_LLE/ARMInterpreter.cpp
   IOS_LLE/ARMInterpreter.h
   IOS_LLE/CP15.cpp
+  IOS_LLE/Syscall.cpp
   LibusbUtils.cpp
   LibusbUtils.h
   MemTools.cpp

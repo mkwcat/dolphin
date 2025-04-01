@@ -65,7 +65,8 @@ struct System::Impl
         m_interpreter(system, m_power_pc.GetPPCState(), m_mmu, m_power_pc.GetBranchWatch(),
                       m_power_pc.GetSymbolDB()),
         m_jit_interface(system), m_fifo_player(system), m_fifo_recorder(system), m_movie(system),
-        m_arm{system, m_memory, {}, false}, m_ahb_mem_bridge_interface(system)
+        m_arm{system, m_memory, {}, false}, m_ahb_mem_bridge_interface(system),
+        m_nand_interface(system)
   {
   }
 

@@ -32,8 +32,17 @@ namespace IOS::LLE::ARMInterpreter
 
 void A_UNK(ARM* cpu)
 {
-  // WARN_LOG_FMT(IOS_LLE, "undefined ARM9 instruction {:08x} @ {:08x}\n", cpu->CurInstr,
-  //             cpu->R[15] - 8);
+  if ((cpu->CurInstr & 0xE6000010) == 0xE6000010)
+  {
+    // IOS Syscall
+    cpu->LogSyscall(cpu->CurInstr);
+  }
+  else
+  {
+    WARN_LOG_FMT(IOS_LLE, "undefined ARM9 instruction {:08x} @ {:08x}\n", cpu->CurInstr,
+                 cpu->R[15] - 8);
+  }
+
 #ifdef GDBSTUB_ENABLED
   cpu->GdbStub.Enter(cpu->GdbStub.IsConnected(), Gdb::TgtStatus::FaultInsn, cpu->R[15] - 8);
 #endif

@@ -698,6 +698,13 @@ static void EmuThread(Core::System& system, std::unique_ptr<BootParameters> boot
     cpuThreadFunc(system, savestate_path, delete_savestate);
   }
 
+  // Join the ARM9 thread
+  if (s_arm9_thread.joinable())
+  {
+    s_arm9_thread.join();
+    INFO_LOG_FMT(CONSOLE, "{}", StopMessage(true, "ARM9 thread stopped."));
+  }
+
   INFO_LOG_FMT(CONSOLE, "{}", StopMessage(true, "Stopping GDB ..."));
   GDBStub::Deinit();
   INFO_LOG_FMT(CONSOLE, "{}", StopMessage(true, "GDB stopped."));

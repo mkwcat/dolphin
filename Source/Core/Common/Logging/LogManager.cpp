@@ -136,6 +136,7 @@ LogManager::LogManager()
   m_log[LogType::MASTER_LOG] = {"MASTER", "Master Log"};
   m_log[LogType::MEMCARD_MANAGER] = {"MemCard Manager", "Memory Card Manager"};
   m_log[LogType::MEMMAP] = {"MI", "Memory Interface & Memory Map"};
+  m_log[LogType::NAND] = {"NAND", "NAND Flash Memory"};
   m_log[LogType::NETPLAY] = {"NETPLAY", "Netplay"};
   m_log[LogType::OSHLE] = {"HLE", "OSHLE"};
   m_log[LogType::OSREPORT] = {"OSREPORT", "OSReport EXI"};
