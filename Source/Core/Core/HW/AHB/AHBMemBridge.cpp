@@ -40,7 +40,7 @@ void AHBMemBridgeInterface::Reset()
 
   m_secddr = 0x08008000;
   m_secspl = 0x01001000;
-  m_rdbi = 0x00000008;
+  m_rdbi = 0x0000ffff;
   m_prefcfg = 0x00000000;
   m_intmsk = 0x00000000;
   m_intsts = 0x00060000;

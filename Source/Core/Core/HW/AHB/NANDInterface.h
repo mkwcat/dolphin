@@ -5,6 +5,7 @@
 
 #include "Common/BitField.h"
 #include "Common/CommonTypes.h"
+#include "Common/IOFile.h"
 #include "Core/CoreTiming.h"
 
 namespace Core
@@ -18,6 +19,10 @@ class Mapping;
 
 namespace NANDInterface
 {
+
+constexpr u32 NAND_PAGE_SIZE = 0x800;
+constexpr u32 NAND_SPARE_SIZE = 0x40;
+constexpr u32 NAND_BLOCK_SIZE = NAND_PAGE_SIZE + NAND_SPARE_SIZE;
 
 union NANDCtrlReg
 {
@@ -93,9 +98,13 @@ public:
   void Init();
   void Reset();
   void RegisterMMIO(MMIO::Mapping* mmio, u32 base);
-  void ExecuteCommand(NANDCtrlReg ctrl);
+  bool ExecuteCommand(std::array<u8, NAND_BLOCK_SIZE>& data, NANDCtrlReg ctrl);
 
 private:
+  bool OpenNANDFile();
+  bool ReadPage(std::array<u8, NAND_BLOCK_SIZE>& data, u32 row, u32 column);
+  bool WritePage(std::array<u8, NAND_BLOCK_SIZE>& data, u32 row, u32 column);
+
   static void ExecuteCommandCallback(Core::System& system, u64 userdata, s64 cycles_late);
 
   NANDCtrlReg m_ctrl;
@@ -105,8 +114,13 @@ private:
   u32 m_databuf_addr;
   u32 m_eccbuf_addr;
 
+  NANDAddr1Reg m_stored_addr1;
+  NANDAddr2Reg m_stored_addr2;
+
   Core::System& m_system;
   CoreTiming::EventType* m_event_handle_nand_command = nullptr;
+
+  File::IOFile m_nand;
 };
 
 }  // namespace NANDInterface

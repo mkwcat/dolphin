@@ -195,8 +195,6 @@ public:
 
   u32 ExceptionBase;
 
-  bool Running;
-
 #ifdef JIT_ENABLED
   u32 FastBlockLookupStart, FastBlockLookupSize;
   u64* FastBlockLookup;
@@ -390,7 +388,7 @@ private:
 #endif
 
   bool CheckAccessPermission(u32 ap, bool is_write);
-  bool TranslateAddress(u32& addr, bool is_write);
+  bool TranslateAddress(u32& addr, bool is_write, bool host = false);
 
   template <typename T>
   T ReadFromHardware(u32 em_address, bool host);

@@ -65,8 +65,8 @@ void Init(Core::System& system, const Sram* override_sram)
     system.GetAHBMemBridgeInterface().Init();
     system.GetAHBMemoryController().Init();
     system.GetNANDInterface().Init();
-    system.GetAESEngine().Init();
-    system.GetSHAEngine().Init();
+    system.GetAESEngine().Init(system);
+    system.GetSHAEngine().Init(system);
     IOS::HLE::Init(system);  // Depends on Memory
   }
 }

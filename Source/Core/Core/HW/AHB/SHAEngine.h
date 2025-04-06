@@ -5,6 +5,7 @@
 
 #include "Common/BitField.h"
 #include "Common/CommonTypes.h"
+#include "Core/CoreTiming.h"
 
 namespace Core
 {
@@ -17,6 +18,8 @@ class Mapping;
 
 namespace SHAEngine
 {
+
+constexpr u32 SHA_BLOCK_SIZE = 0x40;
 
 union SHAControlReg
 {
@@ -41,14 +44,18 @@ public:
   SHAEngineInterface& operator=(SHAEngineInterface&&) = delete;
   ~SHAEngineInterface();
 
-  void Init();
+  void Init(Core::System& system);
   void Reset();
   void RegisterMMIO(MMIO::Mapping* mmio, u32 base);
 
 private:
+  static void ExecuteCommandCallback(Core::System& system, u64 userdata, s64 cycles_late);
+
   SHAControlReg m_ctrl;
   u32 m_src;
   u32 m_hash[5];
+
+  CoreTiming::EventType* m_event_handle_sha_command = nullptr;
 };
 
 }  // namespace SHAEngine

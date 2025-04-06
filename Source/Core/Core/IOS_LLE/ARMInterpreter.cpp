@@ -291,7 +291,20 @@ void A_MRC(ARM* cpu)
 
   if (cp == 15)
   {
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = ((ARMv5*)cpu)->CP15Read((cn << 8) | (cm << 4) | cpinfo);
+    u32 id = (cn << 8) | (cm << 4) | cpinfo;
+    u32 dest_reg = (cpu->CurInstr >> 12) & 0xF;
+
+    if (id == 0x7A3 && dest_reg == 15)
+    {
+      // Special case for test and clean data cache, it does not update the PC
+      // Set beq
+      cpu->CPSR &= ~0xF8000000;
+      cpu->CPSR |= 0x40000000;
+    }
+    else
+    {
+      cpu->R[dest_reg] = ((ARMv5*)cpu)->CP15Read(id);
+    }
   }
   else
   {

@@ -1073,8 +1073,11 @@ u32 ARMv5::ReadMem(u32 addr, int size)
 template <typename T>
 T ARMv5::ReadFromHardware(u32 addr, bool host)
 {
-  if ((addr & 0xF8000000) == 0x08000000)
+  if ((addr & 0xFF000000) == 0x0D000000)
   {
+    // Enforce the 0x00800000 bit to be one to signal to the hardware that the request is from ARM
+    // (privileged)
+    addr |= 0x00800000;
     return static_cast<T>(m_memory.GetMMIOMapping()->Read<std::make_unsigned_t<T>>(m_system, addr));
   }
 
@@ -1144,8 +1147,12 @@ T ARMv5::ReadFromHardware(u32 addr, bool host)
 
 void ARMv5::WriteToHardware(u32 addr, const u32 data, const u32 size, bool host)
 {
-  if ((addr & 0xF8000000) == 0x08000000)
+  if ((addr & 0xFF000000) == 0x0D000000)
   {
+    // Enforce the 0x00800000 bit to be one to signal to the hardware that the request is from ARM
+    // (privileged)
+    addr |= 0x00800000;
+
     switch (size)
     {
     case 1:
@@ -1261,18 +1268,18 @@ void ARMv5::BusWrite32(u32 addr, u32 val)
 
 u32 ARMv5::HostRead_U32(u32 addr)
 {
-  TranslateAddress(addr, false);
+  TranslateAddress(addr, false, true);
   return ReadFromHardware<u32>(addr, true);
 }
 u32 ARMv5::HostRead_Instruction(u32 addr)
 {
-  TranslateAddress(addr, false);
+  TranslateAddress(addr, false, true);
   return ReadFromHardware<u32>(addr, true);
 }
 
 bool ARMv5::HostIsRAMAddress(u32 addr)
 {
-  TranslateAddress(addr, false);
+  TranslateAddress(addr, false, true);
 
   if ((addr & 0xF8000000) == 0x00000000 &&
       ((addr & m_memory.GetRamMask()) + 3) < m_memory.GetRamSizeReal())
@@ -1291,7 +1298,5 @@ bool ARMv5::HostIsRAMAddress(u32 addr)
 
   return false;
 }
-
-
 
 }  // namespace IOS::LLE

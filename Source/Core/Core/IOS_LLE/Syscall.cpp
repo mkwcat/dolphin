@@ -23,7 +23,7 @@ void ARM::SVCWrite0(u32 addr)
 
     if (v == '\n')
     {
-      INFO_LOG_FMT(IOS_LLE, "IOS REPORT: {:s}", m_svc_write_buffer.data());
+      NOTICE_LOG_FMT(IOS_LLE, "IOS REPORT: {:s}", m_svc_write_buffer.data());
       m_svc_write_buffer.clear();
     }
     else if (v != '\r')

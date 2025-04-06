@@ -6,6 +6,7 @@
 #include "Common/ChunkFile.h"
 #include "Common/CommonTypes.h"
 #include "Common/Logging/Log.h"
+#include "Common/Swap.h"
 #include "Common/Timer.h"
 #include "Core/Core.h"
 #include "Core/CoreTiming.h"
@@ -208,16 +209,35 @@ bool WiiIPC::CheckBusAccess(Core::System& system, u32 addr, bool is_write)
 
   if ((addr >> 24) == 0x0D)
   {
-    bool is_privileged = (addr & 0x00800000) || wii_ipc.m_busprot[BUSPROT::PPCKERN];
+    bool is_iop = !!(addr & 0x00800000);
 
-    // SRAM
+    // SRAM (not usually handled here)
     if (addr & 0x00400000)
     {
-      // TODO
-      return true;
+      return is_iop ? true : !!wii_ipc.m_srnprot[SRNPROT::AHPEN];
     }
 
+    if ((addr & 0x000F0000) == 0x00010000)
+    {
+      // NAND interface
+      return !!wii_ipc.m_busprot[is_iop ? BUSPROT::IOPFLAEN : BUSPROT::PPCFLAEN];
+    }
+
+    if ((addr & 0x000F0000) == 0x00020000)
+    {
+      // AES engine interface
+      return !!wii_ipc.m_busprot[is_iop ? BUSPROT::IOPAESEN : BUSPROT::PPCAESEN];
+    }
+
+    if ((addr & 0x000F0000) == 0x00030000)
+    {
+      // SHA engine interface
+      return !!wii_ipc.m_busprot[is_iop ? BUSPROT::IOPSHAEN : BUSPROT::PPCSHAEN];
+    }
+
+    // Hollywood Registers
     u32 reg = addr & 0x0000FFFF;
+    bool is_privileged = (addr & 0x00800000) || wii_ipc.m_busprot[BUSPROT::PPCKERN];
 
     switch (reg)
     {
@@ -574,7 +594,7 @@ void WiiIPC::RegisterMMIO(MMIO::Mapping* mmio, u32 base)
                    u32 addr = val & 0x1f;
                    auto& keys = system.GetWiiKeys();
                    if (keys.IsValid())
-                     wii_ipc.m_efuse_data = keys.GetBackupMiiKeys().otp[addr];
+                     wii_ipc.m_efuse_data = Common::swap32(keys.GetBackupMiiKeys().otp[addr]);
                  }),
                  CheckBusAccess);
   mmio->Register(base | EFUSEDATA, MMIO::DirectRead<u32>(&m_efuse_data), MMIO::Nop<u32>(),
@@ -587,9 +607,9 @@ void WiiIPC::TriggerScheduledInterrupts()
   m_system.GetProcessorInterface().SetInterrupt(ProcessorInterface::INT_CAUSE_WII_IPC,
                                                 !!(m_ppc_irq_flags & m_ppc_irq_masks));
 
-  if (m_system.IsIOSLLE() && (m_arm_irq_flags & m_arm_irq_masks))
+  if (m_system.IsIOSLLE())
   {
-    m_system.GetARM9().IRQ = 1;
+    m_system.GetARM9().IRQ = !!(m_arm_irq_flags & m_arm_irq_masks);
   }
 }
 

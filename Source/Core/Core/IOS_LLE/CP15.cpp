@@ -148,7 +148,7 @@ bool ARMv5::CheckAccessPermission(u32 ap, bool is_write)
   }
 }
 
-bool ARMv5::TranslateAddress(u32& addr, bool is_write)
+bool ARMv5::TranslateAddress(u32& addr, bool is_write, bool host)
 {
   if (!(CP15Control & 0x5))
     return true;
@@ -160,7 +160,8 @@ bool ARMv5::TranslateAddress(u32& addr, bool is_write)
   if (first.m_type == 0b00)
   {
     // Fault
-    ERROR_LOG_FMT(IOS_LLE, "TLB fault for address {:08x} (domain {:x})", addr, first.m_domain);
+    if (!host)
+      ERROR_LOG_FMT(IOS_LLE, "TLB fault for address {:08x} (domain {:x})", addr, first.m_domain);
     return false;
   }
 
@@ -180,7 +181,7 @@ bool ARMv5::TranslateAddress(u32& addr, bool is_write)
 
   case 0b10:  // Section
   {
-    if (!is_manager && !CheckAccessPermission(first.m_ap, is_write))
+    if (!host && !is_manager && !CheckAccessPermission(first.m_ap, is_write))
     {
       // Permission denied
       ERROR_LOG_FMT(IOS_LLE, "TLB permission denied for address {:08x} (ap {:x}, domain {:x})",
@@ -207,11 +208,12 @@ bool ARMv5::TranslateAddress(u32& addr, bool is_write)
   if (second.m_type == 0b00)
   {
     // Fault
-    ERROR_LOG_FMT(IOS_LLE, "TLB fault for address {:08x} (domain {:x})", addr, first.m_domain);
+    if (!host)
+      ERROR_LOG_FMT(IOS_LLE, "TLB fault for address {:08x} (domain {:x})", addr, first.m_domain);
     return false;
   }
 
-  if (!is_manager && !CheckAccessPermission(second.m_ap, is_write))
+  if (!host && !is_manager && !CheckAccessPermission(second.m_ap, is_write))
   {
     // Permission denied
     ERROR_LOG_FMT(IOS_LLE, "TLB permission denied for address {:08x} (ap {:x}, domain {:x})", addr,

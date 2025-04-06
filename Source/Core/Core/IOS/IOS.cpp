@@ -548,7 +548,6 @@ bool EmulationKernel::BootIOS(const u64 ios_title_id, HangPPC hang_ppc,
     arm.Reset();
     arm.CPSR = 0xF;  // Set to system mode
     arm.JumpTo(0x10100010, false);
-    arm.Running = true;
 
     return true;
   }
