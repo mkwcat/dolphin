@@ -196,6 +196,8 @@ private:
 
   void TriggerScheduledInterrupts();
 
+  void ClockEeprom();
+
   u32 m_ppc_msg = 0;
   u32 m_arm_msg = 0;
   CtrlRegister m_ctrl{};
@@ -238,5 +240,13 @@ private:
   u32 m_efuse_data = 0;
 
   Core::System& m_system;
+
+  bool m_eeprom_last_clock = false;
+  bool m_eeprom_last_chip_select = false;
+  u16 m_eeprom_data_in = 0;
+  u32 m_eeprom_bit_count = 0;
+  bool m_eeprom_miso = false;
+  u16 m_eeprom_stored_value = 0;
+  bool m_eeprom_enable_programming = false;
 };
 }  // namespace IOS

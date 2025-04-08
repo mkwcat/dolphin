@@ -22,7 +22,8 @@ namespace NANDInterface
 
 constexpr u32 NAND_PAGE_SIZE = 0x800;
 constexpr u32 NAND_SPARE_SIZE = 0x40;
-constexpr u32 NAND_BLOCK_SIZE = NAND_PAGE_SIZE + NAND_SPARE_SIZE;
+constexpr u32 NAND_FULLPAGE_SIZE = NAND_PAGE_SIZE + NAND_SPARE_SIZE;
+constexpr u32 NAND_PAGE_PER_BLOCK = 64;
 
 union NANDCtrlReg
 {
@@ -98,12 +99,13 @@ public:
   void Init();
   void Reset();
   void RegisterMMIO(MMIO::Mapping* mmio, u32 base);
-  bool ExecuteCommand(std::array<u8, NAND_BLOCK_SIZE>& data, NANDCtrlReg ctrl);
+  bool ExecuteCommand(std::array<u8, NAND_FULLPAGE_SIZE>& data, NANDCtrlReg ctrl);
 
 private:
   bool OpenNANDFile();
-  bool ReadPage(std::array<u8, NAND_BLOCK_SIZE>& data, u32 row, u32 column);
-  bool WritePage(std::array<u8, NAND_BLOCK_SIZE>& data, u32 row, u32 column);
+  bool ReadPage(std::array<u8, NAND_FULLPAGE_SIZE>& data, u32 row, u32 column);
+  bool WritePage(std::array<u8, NAND_FULLPAGE_SIZE>& data, u32 row, u32 column, u32 size);
+  bool ErasePages(u32 page, u32 count);
 
   static void ExecuteCommandCallback(Core::System& system, u64 userdata, s64 cycles_late);
 

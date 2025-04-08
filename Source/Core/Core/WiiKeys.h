@@ -6,12 +6,15 @@
 #include <array>
 #include "Common/CommonTypes.h"
 #include "Common/Crypto/ec.h"
+#include "Common/IOFile.h"
 
 namespace IOS
 {
 
 class WiiKeys
 {
+  friend class WiiIPC;
+
 public:
 #pragma pack(push, 1)
   /*
@@ -100,7 +103,11 @@ public:
   bool IsValid() const { return m_valid; }
   const BootMiiKeyDump& GetBackupMiiKeys() const { return m_keys; }
 
+protected:
+  bool StoreEepromValue(u32 index, u16 value);
+
 private:
+  File::IOFile m_file;
   BootMiiKeyDump m_keys;
   bool m_valid;
 };

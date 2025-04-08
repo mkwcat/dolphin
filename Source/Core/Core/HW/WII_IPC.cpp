@@ -185,24 +185,6 @@ void WiiIPC::Shutdown()
 {
 }
 
-void WiiIPC::UpdateGPIO(Core::System& system)
-{
-  if (m_gpio_out[GPIO::DO_EJECT])
-  {
-    INFO_LOG_FMT(WII_IPC, "Ejecting disc due to GPIO write");
-    system.GetDVDInterface().EjectDisc(Core::CPUThreadGuard{system}, DVD::EjectCause::Software);
-  }
-  // SENSOR_BAR is checked by WiimoteEmu::CameraLogic
-  // TODO: AVE, SLOT_LED
-}
-
-Common::Flags<GPIO> WiiIPC::GetGPIOInFlags() const
-{
-  Common::Flags<GPIO> gpio_in;
-  gpio_in[GPIO::SLOT_IN] = m_system.GetDVDInterface().IsDiscInside();
-  return gpio_in;
-}
-
 bool WiiIPC::CheckBusAccess(Core::System& system, u32 addr, bool is_write)
 {
   auto& wii_ipc = system.GetWiiIPC();
@@ -679,6 +661,107 @@ void WiiIPC::TriggerAlarm(u64 userdata)
   m_arm_irq_flags |= INT_CAUSE_TIMER;
 
   TriggerScheduledInterrupts();
+}
+
+void WiiIPC::UpdateGPIO(Core::System& system)
+{
+  if (m_gpio_out[GPIO::DO_EJECT])
+  {
+    INFO_LOG_FMT(WII_IPC, "Ejecting disc due to GPIO write");
+    system.GetDVDInterface().EjectDisc(Core::CPUThreadGuard{system}, DVD::EjectCause::Software);
+  }
+  // SENSOR_BAR is checked by WiimoteEmu::CameraLogic
+  // TODO: AVE, SLOT_LED
+
+  if (m_eeprom_last_clock != !!m_gpio_out[GPIO::EEP_CLK] ||
+      m_eeprom_last_chip_select != !!m_gpio_out[GPIO::EEP_CS])
+  {
+    m_eeprom_last_clock = !!m_gpio_out[GPIO::EEP_CLK];
+    m_eeprom_last_chip_select = !!m_gpio_out[GPIO::EEP_CS];
+    ClockEeprom();
+  }
+}
+
+Common::Flags<GPIO> WiiIPC::GetGPIOInFlags() const
+{
+  Common::Flags<GPIO> gpio_in;
+  gpio_in[GPIO::SLOT_IN] = m_system.GetDVDInterface().IsDiscInside();
+  gpio_in[GPIO::EEP_MISO] = m_eeprom_miso;
+  return gpio_in;
+}
+
+void WiiIPC::ClockEeprom()
+{
+  bool chip_select = !!m_gpio_out[GPIO::EEP_CS];
+  bool data_in = !!m_gpio_out[GPIO::EEP_MOSI];
+
+  if (!chip_select)
+  {
+    m_eeprom_miso = false;
+
+    // Chip select is going low, so we need to reset
+    if (m_eeprom_bit_count == 11 &&
+        (m_eeprom_data_in & 0x700) == 0x400)  // Enable/disable programming commands
+    {
+      m_eeprom_enable_programming = (data_in & 0xff) == 0xff;
+    }
+    else if (m_eeprom_bit_count >= 11 + 16 &&
+             (m_eeprom_data_in & 0x700) == 0x500)  // Finish write command
+    {
+      // Write data we received
+      WiiKeys& keys = m_system.GetWiiKeys();
+      keys.StoreEepromValue(m_eeprom_data_in & 0x7f, m_eeprom_stored_value);
+      m_eeprom_miso = true;  // Indicate command completion
+    }
+
+    m_eeprom_data_in = 0;
+    m_eeprom_bit_count = 0;
+    return;
+  }
+
+  if (m_eeprom_bit_count < 11)
+  {
+    // Receive command data
+    m_eeprom_data_in <<= 1;
+    m_eeprom_data_in |= data_in;
+    m_eeprom_bit_count++;
+    return;
+  }
+
+  WiiKeys& keys = m_system.GetWiiKeys();
+
+  if ((m_eeprom_data_in & 0x700) == 0x600)  // Read data from EEPROM
+  {
+    if (m_eeprom_bit_count >= 11 + 16)
+    {
+      return;
+    }
+
+    if (m_eeprom_bit_count == 11)
+    {
+      // Fetch data
+      m_eeprom_stored_value =
+          Common::swap16(keys.GetBackupMiiKeys().eeprom[m_eeprom_data_in & 0x7f]);
+    }
+
+    m_eeprom_miso = !!(m_eeprom_stored_value & 0x8000);
+    m_eeprom_stored_value >>= 1;
+    m_eeprom_bit_count++;
+    return;
+  }
+
+  if (m_eeprom_enable_programming && (m_eeprom_data_in & 0x700) == 0x500)  // Write data to EEPROM
+  {
+    if (m_eeprom_bit_count >= 11 + 16)
+    {
+      return;
+    }
+
+    m_eeprom_stored_value <<= 1;
+    m_eeprom_stored_value |= data_in;
+    m_eeprom_bit_count++;
+    return;
+  }
 }
 
 }  // namespace IOS
