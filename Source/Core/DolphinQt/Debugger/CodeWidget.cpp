@@ -638,7 +638,7 @@ void CodeWidget::Skip()
     // Can't just set the PC and expect it to work
     IOS::LLE::ARMv5& arm9 = *cpu.GetARM9();
     u32 pc = arm9.GetPC();
-    if (arm9.CPSR & 0x20)
+    if (arm9.m_reg_cpsr & 0x20)
     {
       // THUMB
       pc += 2;

@@ -13,6 +13,7 @@
 #include <fmt/format.h>
 
 #include "Common/Align.h"
+#include "Common/Arm926ejDisassembler.h"
 #include "Common/Contains.h"
 #include "Common/GekkoDisassembler.h"
 #include "Common/StringUtil.h"
@@ -307,7 +308,24 @@ std::string PPCDebugInterface::Disassemble(const Core::CPUThreadGuard* guard, u3
     }
     else if (cpu.GetARM9())
     {
-      return GetRawMemoryString(*guard, 0, address);
+      if (!cpu.GetARM9()->HostIsRAMAddress(address))
+      {
+        return "(No RAM here)";
+      }
+
+      if (address & 1)
+      {
+        // Thumb
+        const u32 op_combined = cpu.GetARM9()->HostRead_Instruction(address & ~3);
+        const u16 op = address & 2 ? op_combined & 0xFFFF : op_combined >> 16;
+        return Common::Arm926ejDisassembler::DisassembleThumb(op, address & ~1);
+      }
+      else
+      {
+        // ARM
+        const u32 op = cpu.GetARM9()->HostRead_Instruction(address);
+        return Common::Arm926ejDisassembler::DisassembleArm(op, address);
+      }
     }
   }
 

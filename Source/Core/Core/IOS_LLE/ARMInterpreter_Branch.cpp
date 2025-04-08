@@ -16,91 +16,92 @@
     with melonDS. If not, see http://www.gnu.org/licenses/.
 */
 
-#include "ARM.h"
+#include "Core/IOS_LLE/ARM.h"
+#include "Core/IOS_LLE/ARMInterpreter.h"
 
-namespace IOS::LLE::ARMInterpreter
+namespace IOS::LLE
 {
 
-void A_B(ARM* cpu)
+void ARMInterpreter::A_B(ARMv5* cpu)
 {
-  s32 offset = (s32)(cpu->CurInstr << 8) >> 6;
-  cpu->JumpTo(cpu->R[15] + offset);
+  s32 offset = (s32)(cpu->m_inst << 8) >> 6;
+  cpu->JumpTo(cpu->m_reg[15] + offset);
 }
 
-void A_BL(ARM* cpu)
+void ARMInterpreter::A_BL(ARMv5* cpu)
 {
-  s32 offset = (s32)(cpu->CurInstr << 8) >> 6;
-  cpu->R[14] = cpu->R[15] - 4;
-  cpu->JumpTo(cpu->R[15] + offset);
+  s32 offset = (s32)(cpu->m_inst << 8) >> 6;
+  cpu->m_reg[14] = cpu->m_reg[15] - 4;
+  cpu->JumpTo(cpu->m_reg[15] + offset);
 }
 
-void A_BLX_IMM(ARM* cpu)
+void ARMInterpreter::A_BLX_IMM(ARMv5* cpu)
 {
-  s32 offset = (s32)(cpu->CurInstr << 8) >> 6;
-  if (cpu->CurInstr & 0x01000000)
+  s32 offset = (s32)(cpu->m_inst << 8) >> 6;
+  if (cpu->m_inst & 0x01000000)
     offset += 2;
-  cpu->R[14] = cpu->R[15] - 4;
-  cpu->JumpTo(cpu->R[15] + offset + 1);
+  cpu->m_reg[14] = cpu->m_reg[15] - 4;
+  cpu->JumpTo(cpu->m_reg[15] + offset + 1);
 }
 
-void A_BX(ARM* cpu)
+void ARMInterpreter::A_BX(ARMv5* cpu)
 {
-  cpu->JumpTo(cpu->R[cpu->CurInstr & 0xF]);
+  cpu->JumpTo(cpu->m_reg[cpu->m_inst & 0xF]);
 }
 
-void A_BLX_REG(ARM* cpu)
+void ARMInterpreter::A_BLX_REG(ARMv5* cpu)
 {
-  u32 lr = cpu->R[15] - 4;
-  cpu->JumpTo(cpu->R[cpu->CurInstr & 0xF]);
-  cpu->R[14] = lr;
+  u32 lr = cpu->m_reg[15] - 4;
+  cpu->JumpTo(cpu->m_reg[cpu->m_inst & 0xF]);
+  cpu->m_reg[14] = lr;
 }
 
-void T_BCOND(ARM* cpu)
+void ARMInterpreter::T_BCOND(ARMv5* cpu)
 {
-  if (cpu->CheckCondition((cpu->CurInstr >> 8) & 0xF))
+  if (cpu->CheckCondition((cpu->m_inst >> 8) & 0xF))
   {
-    s32 offset = (s32)(cpu->CurInstr << 24) >> 23;
-    cpu->JumpTo(cpu->R[15] + offset + 1);
+    s32 offset = (s32)(cpu->m_inst << 24) >> 23;
+    cpu->JumpTo(cpu->m_reg[15] + offset + 1);
   }
   else
     cpu->AddCycles_C();
 }
 
-void T_BX(ARM* cpu)
+void ARMInterpreter::T_BX(ARMv5* cpu)
 {
-  cpu->JumpTo(cpu->R[(cpu->CurInstr >> 3) & 0xF]);
+  cpu->JumpTo(cpu->m_reg[(cpu->m_inst >> 3) & 0xF]);
 }
 
-void T_BLX_REG(ARM* cpu)
+void ARMInterpreter::T_BLX_REG(ARMv5* cpu)
 {
-  u32 lr = cpu->R[15] - 1;
-  cpu->JumpTo(cpu->R[(cpu->CurInstr >> 3) & 0xF]);
-  cpu->R[14] = lr;
+  u32 lr = cpu->m_reg[15] - 1;
+  cpu->JumpTo(cpu->m_reg[(cpu->m_inst >> 3) & 0xF]);
+  cpu->m_reg[14] = lr;
 }
 
-void T_B(ARM* cpu)
+void ARMInterpreter::T_B(ARMv5* cpu)
 {
-  s32 offset = (s32)((cpu->CurInstr & 0x7FF) << 21) >> 20;
-  cpu->JumpTo(cpu->R[15] + offset + 1);
+  s32 offset = (s32)((cpu->m_inst & 0x7FF) << 21) >> 20;
+  cpu->JumpTo(cpu->m_reg[15] + offset + 1);
 }
 
-void T_BL_LONG_1(ARM* cpu)
+void ARMInterpreter::T_BL_LONG_1(ARMv5* cpu)
 {
-  s32 offset = (s32)((cpu->CurInstr & 0x7FF) << 21) >> 9;
-  cpu->R[14] = cpu->R[15] + offset;
+  s32 offset = (s32)((cpu->m_inst & 0x7FF) << 21) >> 9;
+  cpu->m_reg[14] = cpu->m_reg[15] + offset;
   cpu->AddCycles_C();
 }
 
-void T_BL_LONG_2(ARM* cpu)
+void ARMInterpreter::T_BL_LONG_2(ARMv5* cpu)
 {
-  s32 offset = (cpu->CurInstr & 0x7FF) << 1;
-  u32 pc = cpu->R[14] + offset;
-  cpu->R[14] = (cpu->R[15] - 2) | 1;
+  s32 offset = (cpu->m_inst & 0x7FF) << 1;
+  u32 pc = cpu->m_reg[14] + offset;
+  cpu->m_reg[14] = (cpu->m_reg[15] - 2) | 1;
 
-  if (cpu->CurInstr & (1 << 12))
+  if (cpu->m_inst & (1 << 12))
     pc |= 1;
 
   cpu->JumpTo(pc);
 }
 
-}  // namespace IOS::LLE::ARMInterpreter
+}  // namespace IOS::LLE

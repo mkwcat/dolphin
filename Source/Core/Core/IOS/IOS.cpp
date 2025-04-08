@@ -546,7 +546,7 @@ bool EmulationKernel::BootIOS(const u64 ios_title_id, HangPPC hang_ppc,
     // Start the ARM processor
     auto& arm = m_system.GetARM9();
     arm.Reset();
-    arm.CPSR = 0xF;  // Set to system mode
+    arm.m_reg_cpsr = 0xf;  // Set to system mode
     arm.JumpTo(0x10100010, false);
 
     return true;

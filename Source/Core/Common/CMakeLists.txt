@@ -1,6 +1,8 @@
 add_library(common
   Analytics.cpp
   Analytics.h
+  Arm926ejDisassembler.cpp
+  Arm926ejDisassembler.h
   Assembler/AssemblerShared.cpp
   Assembler/AssemblerShared.h
   Assembler/AssemblerTables.cpp

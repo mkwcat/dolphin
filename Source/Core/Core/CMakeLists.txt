@@ -475,11 +475,8 @@ add_library(core
   IOS_LLE/ARM.cpp
   IOS_LLE/ARM.h
   IOS_LLE/ARMInterpreter_ALU.cpp
-  IOS_LLE/ARMInterpreter_ALU.h
   IOS_LLE/ARMInterpreter_Branch.cpp
-  IOS_LLE/ARMInterpreter_Branch.h
   IOS_LLE/ARMInterpreter_LoadStore.cpp
-  IOS_LLE/ARMInterpreter_LoadStore.h
   IOS_LLE/ARMInterpreter.cpp
   IOS_LLE/ARMInterpreter.h
   IOS_LLE/CP15.cpp

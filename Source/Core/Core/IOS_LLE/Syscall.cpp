@@ -6,7 +6,7 @@
 namespace IOS::LLE
 {
 
-void ARM::SVCWrite0(u32 addr)
+void ARMv5::SVCWrite0(u32 addr)
 {
   ARMv5* v5 = static_cast<ARMv5*>(this);
 
@@ -35,7 +35,7 @@ void ARM::SVCWrite0(u32 addr)
   }
 }
 
-void ARM::LogSyscall(u32 instr)
+void ARMv5::LogSyscall(u32 instr)
 {
   u8 syscall = instr >> 5 & 0xFF;
 
@@ -184,7 +184,7 @@ void ARM::LogSyscall(u32 instr)
 
   // TODO: Stack args
 
-  u32 lr = R[14];
+  u32 lr = m_reg[14];
   switch (syscall_def.arg_count)
   {
   case 0:
@@ -193,23 +193,23 @@ void ARM::LogSyscall(u32 instr)
 
   case 1:
     INFO_LOG_FMT(IOS_LLE, "IOS syscall {:02x} from {:08x}: {}({:08x})", syscall, lr,
-                 syscall_def.name, R[0]);
+                 syscall_def.name, m_reg[0]);
     break;
 
   case 2:
     INFO_LOG_FMT(IOS_LLE, "IOS syscall {:02x} from {:08x}: {}({:08x}, {:08x})", syscall, lr,
-                 syscall_def.name, R[0], R[1]);
+                 syscall_def.name, m_reg[0], m_reg[1]);
     break;
 
   case 3:
     INFO_LOG_FMT(IOS_LLE, "IOS syscall {:02x} from {:08x}: {}({:08x}, {:08x}, {:08x})", syscall, lr,
-                 syscall_def.name, R[0], R[1], R[2]);
+                 syscall_def.name, m_reg[0], m_reg[1], m_reg[2]);
     break;
 
   default:
   case 4:
     INFO_LOG_FMT(IOS_LLE, "IOS syscall {:02x} from {:08x}: {}({:08x}, {:08x}, {:08x}, {:08x})",
-                 syscall, lr, syscall_def.name, R[0], R[1], R[2], R[3]);
+                 syscall, lr, syscall_def.name, m_reg[0], m_reg[1], m_reg[2], m_reg[3]);
     break;
   }
 }

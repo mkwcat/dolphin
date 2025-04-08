@@ -591,7 +591,7 @@ void WiiIPC::TriggerScheduledInterrupts()
 
   if (m_system.IsIOSLLE())
   {
-    m_system.GetARM9().IRQ = !!(m_arm_irq_flags & m_arm_irq_masks);
+    m_system.GetARM9().m_is_irq = !!(m_arm_irq_flags & m_arm_irq_masks);
   }
 }
 

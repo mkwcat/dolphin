@@ -18,29 +18,26 @@
 
 #include "ARMInterpreter.h"
 #include <stdio.h>
-#include "ARMInterpreter_ALU.h"
-#include "ARMInterpreter_Branch.h"
-#include "ARMInterpreter_LoadStore.h"
 #include "Common/Logging/Log.h"
 
 #ifdef GDBSTUB_ENABLED
 #include "debug/GdbStub.h"
 #endif
 
-namespace IOS::LLE::ARMInterpreter
+namespace IOS::LLE
 {
 
-void A_UNK(ARM* cpu)
+void ARMInterpreter::A_UNK(ARMv5* cpu)
 {
-  if ((cpu->CurInstr & 0xE6000010) == 0xE6000010)
+  if ((cpu->m_inst & 0xE6000010) == 0xE6000010)
   {
     // IOS Syscall
-    cpu->LogSyscall(cpu->CurInstr);
+    cpu->LogSyscall(cpu->m_inst);
   }
   else
   {
-    WARN_LOG_FMT(IOS_LLE, "undefined ARM9 instruction {:08x} @ {:08x}\n", cpu->CurInstr,
-                 cpu->R[15] - 8);
+    WARN_LOG_FMT(IOS_LLE, "undefined ARM9 instruction {:08x} @ {:08x}\n", cpu->m_inst,
+                 cpu->m_reg[15] - 8);
   }
 
 #ifdef GDBSTUB_ENABLED
@@ -48,61 +45,61 @@ void A_UNK(ARM* cpu)
 #endif
   // for (int i = 0; i < 16; i++) printf("R{}: {:08x}\n", i, cpu->R[i]);
   // NDS::Halt();
-  u32 oldcpsr = cpu->CPSR;
-  cpu->CPSR &= ~0xBF;
-  cpu->CPSR |= 0x9B;
-  cpu->UpdateMode(oldcpsr, cpu->CPSR);
+  u32 oldcpsr = cpu->m_reg_cpsr;
+  cpu->m_reg_cpsr &= ~0xBF;
+  cpu->m_reg_cpsr |= 0x9B;
+  cpu->UpdateMode(oldcpsr, cpu->m_reg_cpsr);
 
-  cpu->R_UND[2] = oldcpsr;
-  cpu->R[14] = cpu->R[15] - 4;
-  cpu->JumpTo(cpu->ExceptionBase + 0x04);
+  cpu->m_und_reg[2] = oldcpsr;
+  cpu->m_reg[14] = cpu->m_reg[15] - 4;
+  cpu->JumpTo(cpu->m_exception_base + 0x04);
 }
 
-void T_UNK(ARM* cpu)
+void ARMInterpreter::T_UNK(ARMv5* cpu)
 {
-  WARN_LOG_FMT(IOS_LLE, "undefined THUMB9 instruction {:04x} @ {:08x}\n", cpu->CurInstr,
-               cpu->R[15] - 4);
+  WARN_LOG_FMT(IOS_LLE, "undefined THUMB9 instruction {:04x} @ {:08x}\n", cpu->m_inst,
+               cpu->m_reg[15] - 4);
 #ifdef GDBSTUB_ENABLED
   cpu->GdbStub.Enter(cpu->GdbStub.IsConnected(), Gdb::TgtStatus::FaultInsn, cpu->R[15] - 4);
 #endif
   // NDS::Halt();
-  u32 oldcpsr = cpu->CPSR;
-  cpu->CPSR &= ~0xBF;
-  cpu->CPSR |= 0x9B;
-  cpu->UpdateMode(oldcpsr, cpu->CPSR);
+  u32 oldcpsr = cpu->m_reg_cpsr;
+  cpu->m_reg_cpsr &= ~0xBF;
+  cpu->m_reg_cpsr |= 0x9B;
+  cpu->UpdateMode(oldcpsr, cpu->m_reg_cpsr);
 
-  cpu->R_UND[2] = oldcpsr;
-  cpu->R[14] = cpu->R[15] - 2;
-  cpu->JumpTo(cpu->ExceptionBase + 0x04);
+  cpu->m_und_reg[2] = oldcpsr;
+  cpu->m_reg[14] = cpu->m_reg[15] - 2;
+  cpu->JumpTo(cpu->m_exception_base + 0x04);
 }
 
-void A_MSR_IMM(ARM* cpu)
+void ARMInterpreter::A_MSR_IMM(ARMv5* cpu)
 {
   u32* psr;
-  if (cpu->CurInstr & (1 << 22))
+  if (cpu->m_inst & (1 << 22))
   {
-    switch (cpu->CPSR & 0x1F)
+    switch (cpu->m_reg_cpsr & 0x1F)
     {
     case 0x11:
-      psr = &cpu->R_FIQ[7];
+      psr = &cpu->m_fiq_reg[7];
       break;
     case 0x12:
-      psr = &cpu->R_IRQ[2];
+      psr = &cpu->m_irq_reg[2];
       break;
     case 0x13:
-      psr = &cpu->R_SVC[2];
+      psr = &cpu->m_svc_reg[2];
       break;
     case 0x14:
     case 0x15:
     case 0x16:
     case 0x17:
-      psr = &cpu->R_ABT[2];
+      psr = &cpu->m_abt_reg[2];
       break;
     case 0x18:
     case 0x19:
     case 0x1A:
     case 0x1B:
-      psr = &cpu->R_UND[2];
+      psr = &cpu->m_und_reg[2];
       break;
     default:
       cpu->AddCycles_C();
@@ -110,27 +107,27 @@ void A_MSR_IMM(ARM* cpu)
     }
   }
   else
-    psr = &cpu->CPSR;
+    psr = &cpu->m_reg_cpsr;
 
   u32 oldpsr = *psr;
 
   u32 mask = 0;
-  if (cpu->CurInstr & (1 << 16))
+  if (cpu->m_inst & (1 << 16))
     mask |= 0x000000FF;
-  if (cpu->CurInstr & (1 << 17))
+  if (cpu->m_inst & (1 << 17))
     mask |= 0x0000FF00;
-  if (cpu->CurInstr & (1 << 18))
+  if (cpu->m_inst & (1 << 18))
     mask |= 0x00FF0000;
-  if (cpu->CurInstr & (1 << 19))
+  if (cpu->m_inst & (1 << 19))
     mask |= 0xFF000000;
 
-  if (!(cpu->CurInstr & (1 << 22)))
+  if (!(cpu->m_inst & (1 << 22)))
     mask &= 0xFFFFFFDF;
 
-  if ((cpu->CPSR & 0x1F) == 0x10)
+  if ((cpu->m_reg_cpsr & 0x1F) == 0x10)
     mask &= 0xFFFFFF00;
 
-  u32 val = ROR((cpu->CurInstr & 0xFF), ((cpu->CurInstr >> 7) & 0x1E));
+  u32 val = ROR((cpu->m_inst & 0xFF), ((cpu->m_inst >> 7) & 0x1E));
 
   // bit4 is forced to 1
   val |= 0x00000010;
@@ -138,39 +135,39 @@ void A_MSR_IMM(ARM* cpu)
   *psr &= ~mask;
   *psr |= (val & mask);
 
-  if (!(cpu->CurInstr & (1 << 22)))
-    cpu->UpdateMode(oldpsr, cpu->CPSR);
+  if (!(cpu->m_inst & (1 << 22)))
+    cpu->UpdateMode(oldpsr, cpu->m_reg_cpsr);
 
   cpu->AddCycles_C();
 }
 
-void A_MSR_REG(ARM* cpu)
+void ARMInterpreter::A_MSR_REG(ARMv5* cpu)
 {
   u32* psr;
-  if (cpu->CurInstr & (1 << 22))
+  if (cpu->m_inst & (1 << 22))
   {
-    switch (cpu->CPSR & 0x1F)
+    switch (cpu->m_reg_cpsr & 0x1F)
     {
     case 0x11:
-      psr = &cpu->R_FIQ[7];
+      psr = &cpu->m_fiq_reg[7];
       break;
     case 0x12:
-      psr = &cpu->R_IRQ[2];
+      psr = &cpu->m_irq_reg[2];
       break;
     case 0x13:
-      psr = &cpu->R_SVC[2];
+      psr = &cpu->m_svc_reg[2];
       break;
     case 0x14:
     case 0x15:
     case 0x16:
     case 0x17:
-      psr = &cpu->R_ABT[2];
+      psr = &cpu->m_abt_reg[2];
       break;
     case 0x18:
     case 0x19:
     case 0x1A:
     case 0x1B:
-      psr = &cpu->R_UND[2];
+      psr = &cpu->m_und_reg[2];
       break;
     default:
       cpu->AddCycles_C();
@@ -178,27 +175,27 @@ void A_MSR_REG(ARM* cpu)
     }
   }
   else
-    psr = &cpu->CPSR;
+    psr = &cpu->m_reg_cpsr;
 
   u32 oldpsr = *psr;
 
   u32 mask = 0;
-  if (cpu->CurInstr & (1 << 16))
+  if (cpu->m_inst & (1 << 16))
     mask |= 0x000000FF;
-  if (cpu->CurInstr & (1 << 17))
+  if (cpu->m_inst & (1 << 17))
     mask |= 0x0000FF00;
-  if (cpu->CurInstr & (1 << 18))
+  if (cpu->m_inst & (1 << 18))
     mask |= 0x00FF0000;
-  if (cpu->CurInstr & (1 << 19))
+  if (cpu->m_inst & (1 << 19))
     mask |= 0xFF000000;
 
-  if (!(cpu->CurInstr & (1 << 22)))
+  if (!(cpu->m_inst & (1 << 22)))
     mask &= 0xFFFFFFDF;
 
-  if ((cpu->CPSR & 0x1F) == 0x10)
+  if ((cpu->m_reg_cpsr & 0x1F) == 0x10)
     mask &= 0xFFFFFF00;
 
-  u32 val = cpu->R[cpu->CurInstr & 0xF];
+  u32 val = cpu->m_reg[cpu->m_inst & 0xF];
 
   // bit4 is forced to 1
   val |= 0x00000010;
@@ -206,68 +203,68 @@ void A_MSR_REG(ARM* cpu)
   *psr &= ~mask;
   *psr |= (val & mask);
 
-  if (!(cpu->CurInstr & (1 << 22)))
-    cpu->UpdateMode(oldpsr, cpu->CPSR);
+  if (!(cpu->m_inst & (1 << 22)))
+    cpu->UpdateMode(oldpsr, cpu->m_reg_cpsr);
 
   cpu->AddCycles_C();
 }
 
-void A_MRS(ARM* cpu)
+void ARMInterpreter::A_MRS(ARMv5* cpu)
 {
   u32 psr;
-  if (cpu->CurInstr & (1 << 22))
+  if (cpu->m_inst & (1 << 22))
   {
-    switch (cpu->CPSR & 0x1F)
+    switch (cpu->m_reg_cpsr & 0x1F)
     {
     case 0x11:
-      psr = cpu->R_FIQ[7];
+      psr = cpu->m_fiq_reg[7];
       break;
     case 0x12:
-      psr = cpu->R_IRQ[2];
+      psr = cpu->m_irq_reg[2];
       break;
     case 0x13:
-      psr = cpu->R_SVC[2];
+      psr = cpu->m_svc_reg[2];
       break;
     case 0x14:
     case 0x15:
     case 0x16:
     case 0x17:
-      psr = cpu->R_ABT[2];
+      psr = cpu->m_abt_reg[2];
       break;
     case 0x18:
     case 0x19:
     case 0x1A:
     case 0x1B:
-      psr = cpu->R_UND[2];
+      psr = cpu->m_und_reg[2];
       break;
     default:
-      psr = cpu->CPSR;
+      psr = cpu->m_reg_cpsr;
       break;
     }
   }
   else
-    psr = cpu->CPSR;
+    psr = cpu->m_reg_cpsr;
 
-  cpu->R[(cpu->CurInstr >> 12) & 0xF] = psr;
+  cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = psr;
   cpu->AddCycles_C();
 }
 
-void A_MCR(ARM* cpu)
+void ARMInterpreter::A_MCR(ARMv5* cpu)
 {
-  if ((cpu->CPSR & 0x1F) == 0x10)
+  if ((cpu->m_reg_cpsr & 0x1F) == 0x10)
     return A_UNK(cpu);
 
-  u32 cp = (cpu->CurInstr >> 8) & 0xF;
-  // u32 op = (cpu->CurInstr >> 21) & 0x7;
-  u32 cn = (cpu->CurInstr >> 16) & 0xF;
-  u32 cm = cpu->CurInstr & 0xF;
-  u32 cpinfo = (cpu->CurInstr >> 5) & 0x7;
+  u32 cp = (cpu->m_inst >> 8) & 0xF;
+  // u32 op = (cpu->m_inst >> 21) & 0x7;
+  u32 cn = (cpu->m_inst >> 16) & 0xF;
+  u32 cm = cpu->m_inst & 0xF;
+  u32 cpinfo = (cpu->m_inst >> 5) & 0x7;
 
   // mcr xxx, 0, r0, cn, cm, cpinfo
 
   if (cp == 15)
   {
-    ((ARMv5*)cpu)->CP15Write((cn << 8) | (cm << 4) | cpinfo, cpu->R[(cpu->CurInstr >> 12) & 0xF]);
+    ((ARMv5*)cpu)->CP15Write((cn << 8) | (cm << 4) | cpinfo, cpu->m_reg[(cpu->m_inst >> 12) & 0xF]);
   }
   else
   {
@@ -278,32 +275,32 @@ void A_MCR(ARM* cpu)
   cpu->AddCycles_CI(1 + 1);  // TODO: checkme
 }
 
-void A_MRC(ARM* cpu)
+void ARMInterpreter::A_MRC(ARMv5* cpu)
 {
-  if ((cpu->CPSR & 0x1F) == 0x10)
+  if ((cpu->m_reg_cpsr & 0x1F) == 0x10)
     return A_UNK(cpu);
 
-  u32 cp = (cpu->CurInstr >> 8) & 0xF;
-  // u32 op = (cpu->CurInstr >> 21) & 0x7;
-  u32 cn = (cpu->CurInstr >> 16) & 0xF;
-  u32 cm = cpu->CurInstr & 0xF;
-  u32 cpinfo = (cpu->CurInstr >> 5) & 0x7;
+  u32 cp = (cpu->m_inst >> 8) & 0xF;
+  // u32 op = (cpu->m_inst >> 21) & 0x7;
+  u32 cn = (cpu->m_inst >> 16) & 0xF;
+  u32 cm = cpu->m_inst & 0xF;
+  u32 cpinfo = (cpu->m_inst >> 5) & 0x7;
 
   if (cp == 15)
   {
     u32 id = (cn << 8) | (cm << 4) | cpinfo;
-    u32 dest_reg = (cpu->CurInstr >> 12) & 0xF;
+    u32 dest_reg = (cpu->m_inst >> 12) & 0xF;
 
     if (id == 0x7A3 && dest_reg == 15)
     {
       // Special case for test and clean data cache, it does not update the PC
       // Set beq
-      cpu->CPSR &= ~0xF8000000;
-      cpu->CPSR |= 0x40000000;
+      cpu->m_reg_cpsr &= ~0xF8000000;
+      cpu->m_reg_cpsr |= 0x40000000;
     }
     else
     {
-      cpu->R[dest_reg] = ((ARMv5*)cpu)->CP15Read(id);
+      cpu->m_reg[dest_reg] = ((ARMv5*)cpu)->CP15Read(id);
     }
   }
   else
@@ -315,44 +312,44 @@ void A_MRC(ARM* cpu)
   cpu->AddCycles_CI(2 + 1);  // TODO: checkme
 }
 
-void A_SVC(ARM* cpu)
+void ARMInterpreter::A_SVC(ARMv5* cpu)
 {
-  // INFO_LOG_FMT(IOS_LLE, "SVC instruction {:08x} @ {:08x}\n", cpu->CurInstr, cpu->R[15] - 8);
-  if (cpu->R[0] == 4)
+  // INFO_LOG_FMT(IOS_LLE, "SVC instruction {:08x} @ {:08x}\n", cpu->m_inst, cpu->R[15] - 8);
+  if (cpu->m_reg[0] == 4)
   {
-    cpu->SVCWrite0(cpu->R[1]);
+    cpu->SVCWrite0(cpu->m_reg[1]);
   }
 
-  u32 oldcpsr = cpu->CPSR;
-  cpu->CPSR &= ~0xBF;
-  cpu->CPSR |= 0x93;
-  cpu->UpdateMode(oldcpsr, cpu->CPSR);
+  u32 oldcpsr = cpu->m_reg_cpsr;
+  cpu->m_reg_cpsr &= ~0xBF;
+  cpu->m_reg_cpsr |= 0x93;
+  cpu->UpdateMode(oldcpsr, cpu->m_reg_cpsr);
 
-  cpu->R_SVC[2] = oldcpsr;
-  cpu->R[14] = cpu->R[15] - 4;
-  cpu->JumpTo(cpu->ExceptionBase + 0x08);
+  cpu->m_svc_reg[2] = oldcpsr;
+  cpu->m_reg[14] = cpu->m_reg[15] - 4;
+  cpu->JumpTo(cpu->m_exception_base + 0x08);
 }
 
-void T_SVC(ARM* cpu)
+void ARMInterpreter::T_SVC(ARMv5* cpu)
 {
-  // INFO_LOG_FMT(IOS_LLE, "SVC instruction {:04x} @ {:08x}\n", cpu->CurInstr, cpu->R[15] - 4 + 1);
-  if (cpu->R[0] == 4)
+  // INFO_LOG_FMT(IOS_LLE, "SVC instruction {:04x} @ {:08x}\n", cpu->m_inst, cpu->R[15] - 4 + 1);
+  if (cpu->m_reg[0] == 4)
   {
-    cpu->SVCWrite0(cpu->R[1]);
+    cpu->SVCWrite0(cpu->m_reg[1]);
   }
 
-  u32 oldcpsr = cpu->CPSR;
-  cpu->CPSR &= ~0xBF;
-  cpu->CPSR |= 0x93;
-  cpu->UpdateMode(oldcpsr, cpu->CPSR);
+  u32 oldcpsr = cpu->m_reg_cpsr;
+  cpu->m_reg_cpsr &= ~0xBF;
+  cpu->m_reg_cpsr |= 0x93;
+  cpu->UpdateMode(oldcpsr, cpu->m_reg_cpsr);
 
-  cpu->R_SVC[2] = oldcpsr;
-  cpu->R[14] = cpu->R[15] - 2;
-  cpu->JumpTo(cpu->ExceptionBase + 0x08);
+  cpu->m_svc_reg[2] = oldcpsr;
+  cpu->m_reg[14] = cpu->m_reg[15] - 2;
+  cpu->JumpTo(cpu->m_exception_base + 0x08);
 }
 
-#define INSTRFUNC_PROTO(x) void (*x)(ARM * cpu)
+#define INSTRFUNC_PROTO(x) void (*ARMInterpreter::x)(ARMv5 * cpu)
 #include "ARM_InstrTable.h"
 #undef INSTRFUNC_PROTO
 
-}  // namespace IOS::LLE::ARMInterpreter
+}  // namespace IOS::LLE

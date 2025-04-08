@@ -17,9 +17,10 @@
 */
 
 #include <stdio.h>
-#include "ARM.h"
+#include "Core/IOS_LLE/ARM.h"
+#include "Core/IOS_LLE/ARMInterpreter.h"
 
-namespace IOS::LLE::ARMInterpreter
+namespace IOS::LLE
 {
 
 inline bool CarryAdd(u32 a, u32 b)
@@ -75,7 +76,7 @@ inline bool OverflowSbc(u32 a, u32 b, u32 carry)
 #define ROR_IMM(x, s)                                                                              \
   if (s == 0)                                                                                      \
   {                                                                                                \
-    x = (x >> 1) | ((cpu->CPSR & 0x20000000) << 2);                                                \
+    x = (x >> 1) | ((cpu->m_reg_cpsr & 0x20000000) << 2);                                          \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
@@ -117,7 +118,7 @@ inline bool OverflowSbc(u32 a, u32 b, u32 carry)
   if (s == 0)                                                                                      \
   {                                                                                                \
     u32 newc = (x & 1);                                                                            \
-    x = (x >> 1) | ((cpu->CPSR & 0x20000000) << 2);                                                \
+    x = (x >> 1) | ((cpu->m_reg_cpsr & 0x20000000) << 2);                                          \
     cpu->SetC(newc);                                                                               \
   }                                                                                                \
   else                                                                                             \
@@ -187,111 +188,111 @@ inline bool OverflowSbc(u32 a, u32 b, u32 carry)
     cpu->SetC(x & (1 << (s - 1)));                                                                 \
   x = ROR(x, (s & 0x1F));
 
-#define A_CALC_OP2_IMM u32 b = ROR(cpu->CurInstr & 0xFF, (cpu->CurInstr >> 7) & 0x1E);
+#define A_CALC_OP2_IMM u32 b = ROR(cpu->m_inst & 0xFF, (cpu->m_inst >> 7) & 0x1E);
 
 #define A_CALC_OP2_IMM_S                                                                           \
-  u32 b = ROR(cpu->CurInstr & 0xFF, (cpu->CurInstr >> 7) & 0x1E);                                  \
-  if ((cpu->CurInstr >> 7) & 0x1E)                                                                 \
+  u32 b = ROR(cpu->m_inst & 0xFF, (cpu->m_inst >> 7) & 0x1E);                                  \
+  if ((cpu->m_inst >> 7) & 0x1E)                                                                 \
     cpu->SetC(b & 0x80000000);
 
 #define A_CALC_OP2_REG_SHIFT_IMM(shiftop)                                                          \
-  u32 b = cpu->R[cpu->CurInstr & 0xF];                                                             \
-  u32 s = (cpu->CurInstr >> 7) & 0x1F;                                                             \
+  u32 b = cpu->m_reg[cpu->m_inst & 0xF];                                                             \
+  u32 s = (cpu->m_inst >> 7) & 0x1F;                                                             \
   shiftop(b, s);
 
 #define A_CALC_OP2_REG_SHIFT_REG(shiftop)                                                          \
-  u32 b = cpu->R[cpu->CurInstr & 0xF];                                                             \
-  if ((cpu->CurInstr & 0xF) == 15)                                                                 \
+  u32 b = cpu->m_reg[cpu->m_inst & 0xF];                                                             \
+  if ((cpu->m_inst & 0xF) == 15)                                                                 \
     b += 4;                                                                                        \
-  shiftop(b, (cpu->R[(cpu->CurInstr >> 8) & 0xF] & 0xFF));
+  shiftop(b, (cpu->m_reg[(cpu->m_inst >> 8) & 0xF] & 0xFF));
 
 #define A_IMPLEMENT_ALU_OP(x, s)                                                                   \
                                                                                                    \
-  void A_##x##_IMM(ARM* cpu)                                                                       \
+  void ARMInterpreter::A_##x##_IMM(ARMv5* cpu)                                                     \
   {                                                                                                \
     A_CALC_OP2_IMM                                                                                 \
     A_##x(0)                                                                                       \
   }                                                                                                \
-  void A_##x##_REG_LSL_IMM(ARM* cpu)                                                               \
+  void ARMInterpreter::A_##x##_REG_LSL_IMM(ARMv5* cpu)                                             \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_IMM(LSL_IMM)                                                              \
     A_##x(0)                                                                                       \
   }                                                                                                \
-  void A_##x##_REG_LSR_IMM(ARM* cpu)                                                               \
+  void ARMInterpreter::A_##x##_REG_LSR_IMM(ARMv5* cpu)                                             \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_IMM(LSR_IMM)                                                              \
     A_##x(0)                                                                                       \
   }                                                                                                \
-  void A_##x##_REG_ASR_IMM(ARM* cpu)                                                               \
+  void ARMInterpreter::A_##x##_REG_ASR_IMM(ARMv5* cpu)                                             \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_IMM(ASR_IMM)                                                              \
     A_##x(0)                                                                                       \
   }                                                                                                \
-  void A_##x##_REG_ROR_IMM(ARM* cpu)                                                               \
+  void ARMInterpreter::A_##x##_REG_ROR_IMM(ARMv5* cpu)                                             \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_IMM(ROR_IMM)                                                              \
     A_##x(0)                                                                                       \
   }                                                                                                \
-  void A_##x##_REG_LSL_REG(ARM* cpu)                                                               \
+  void ARMInterpreter::A_##x##_REG_LSL_REG(ARMv5* cpu)                                             \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_REG(LSL_REG)                                                              \
     A_##x(1)                                                                                       \
   }                                                                                                \
-  void A_##x##_REG_LSR_REG(ARM* cpu)                                                               \
+  void ARMInterpreter::A_##x##_REG_LSR_REG(ARMv5* cpu)                                             \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_REG(LSR_REG)                                                              \
     A_##x(1)                                                                                       \
   }                                                                                                \
-  void A_##x##_REG_ASR_REG(ARM* cpu)                                                               \
+  void ARMInterpreter::A_##x##_REG_ASR_REG(ARMv5* cpu)                                             \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_REG(ASR_REG)                                                              \
     A_##x(1)                                                                                       \
   }                                                                                                \
-  void A_##x##_REG_ROR_REG(ARM* cpu)                                                               \
+  void ARMInterpreter::A_##x##_REG_ROR_REG(ARMv5* cpu)                                             \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_REG(ROR_REG)                                                              \
     A_##x(1)                                                                                       \
   }                                                                                                \
-  void A_##x##_IMM_S(ARM* cpu)                                                                     \
+  void ARMInterpreter::A_##x##_IMM_S(ARMv5* cpu)                                                   \
   {                                                                                                \
     A_CALC_OP2_IMM##s A_##x##_S(0)                                                                 \
   }                                                                                                \
-  void A_##x##_REG_LSL_IMM_S(ARM* cpu)                                                             \
+  void ARMInterpreter::A_##x##_REG_LSL_IMM_S(ARMv5* cpu)                                           \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_IMM(LSL_IMM##s)                                                           \
     A_##x##_S(0)                                                                                   \
   }                                                                                                \
-  void A_##x##_REG_LSR_IMM_S(ARM* cpu)                                                             \
+  void ARMInterpreter::A_##x##_REG_LSR_IMM_S(ARMv5* cpu)                                           \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_IMM(LSR_IMM##s)                                                           \
     A_##x##_S(0)                                                                                   \
   }                                                                                                \
-  void A_##x##_REG_ASR_IMM_S(ARM* cpu)                                                             \
+  void ARMInterpreter::A_##x##_REG_ASR_IMM_S(ARMv5* cpu)                                           \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_IMM(ASR_IMM##s)                                                           \
     A_##x##_S(0)                                                                                   \
   }                                                                                                \
-  void A_##x##_REG_ROR_IMM_S(ARM* cpu)                                                             \
+  void ARMInterpreter::A_##x##_REG_ROR_IMM_S(ARMv5* cpu)                                           \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_IMM(ROR_IMM##s)                                                           \
     A_##x##_S(0)                                                                                   \
   }                                                                                                \
-  void A_##x##_REG_LSL_REG_S(ARM* cpu)                                                             \
+  void ARMInterpreter::A_##x##_REG_LSL_REG_S(ARMv5* cpu)                                           \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_REG(LSL_REG##s)                                                           \
     A_##x##_S(1)                                                                                   \
   }                                                                                                \
-  void A_##x##_REG_LSR_REG_S(ARM* cpu)                                                             \
+  void ARMInterpreter::A_##x##_REG_LSR_REG_S(ARMv5* cpu)                                           \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_REG(LSR_REG##s)                                                           \
     A_##x##_S(1)                                                                                   \
   }                                                                                                \
-  void A_##x##_REG_ASR_REG_S(ARM* cpu)                                                             \
+  void ARMInterpreter::A_##x##_REG_ASR_REG_S(ARMv5* cpu)                                           \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_REG(ASR_REG##s)                                                           \
     A_##x##_S(1)                                                                                   \
   }                                                                                                \
-  void A_##x##_REG_ROR_REG_S(ARM* cpu)                                                             \
+  void ARMInterpreter::A_##x##_REG_ROR_REG_S(ARMv5* cpu)                                           \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_REG(ROR_REG##s)                                                           \
     A_##x##_S(1)                                                                                   \
@@ -299,246 +300,246 @@ inline bool OverflowSbc(u32 a, u32 b, u32 carry)
 
 #define A_IMPLEMENT_ALU_TEST(x, s)                                                                 \
                                                                                                    \
-  void A_##x##_IMM(ARM* cpu)                                                                       \
+  void ARMInterpreter::A_##x##_IMM(ARMv5* cpu)                                                     \
   {                                                                                                \
     A_CALC_OP2_IMM##s A_##x(0)                                                                     \
   }                                                                                                \
-  void A_##x##_REG_LSL_IMM(ARM* cpu)                                                               \
+  void ARMInterpreter::A_##x##_REG_LSL_IMM(ARMv5* cpu)                                             \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_IMM(LSL_IMM##s)                                                           \
     A_##x(0)                                                                                       \
   }                                                                                                \
-  void A_##x##_REG_LSR_IMM(ARM* cpu)                                                               \
+  void ARMInterpreter::A_##x##_REG_LSR_IMM(ARMv5* cpu)                                             \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_IMM(LSR_IMM##s)                                                           \
     A_##x(0)                                                                                       \
   }                                                                                                \
-  void A_##x##_REG_ASR_IMM(ARM* cpu)                                                               \
+  void ARMInterpreter::A_##x##_REG_ASR_IMM(ARMv5* cpu)                                             \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_IMM(ASR_IMM##s)                                                           \
     A_##x(0)                                                                                       \
   }                                                                                                \
-  void A_##x##_REG_ROR_IMM(ARM* cpu)                                                               \
+  void ARMInterpreter::A_##x##_REG_ROR_IMM(ARMv5* cpu)                                             \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_IMM(ROR_IMM##s)                                                           \
     A_##x(0)                                                                                       \
   }                                                                                                \
-  void A_##x##_REG_LSL_REG(ARM* cpu)                                                               \
+  void ARMInterpreter::A_##x##_REG_LSL_REG(ARMv5* cpu)                                             \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_REG(LSL_REG##s)                                                           \
     A_##x(1)                                                                                       \
   }                                                                                                \
-  void A_##x##_REG_LSR_REG(ARM* cpu)                                                               \
+  void ARMInterpreter::A_##x##_REG_LSR_REG(ARMv5* cpu)                                             \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_REG(LSR_REG##s)                                                           \
     A_##x(1)                                                                                       \
   }                                                                                                \
-  void A_##x##_REG_ASR_REG(ARM* cpu)                                                               \
+  void ARMInterpreter::A_##x##_REG_ASR_REG(ARMv5* cpu)                                             \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_REG(ASR_REG##s)                                                           \
     A_##x(1)                                                                                       \
   }                                                                                                \
-  void A_##x##_REG_ROR_REG(ARM* cpu)                                                               \
+  void ARMInterpreter::A_##x##_REG_ROR_REG(ARMv5* cpu)                                             \
   {                                                                                                \
     A_CALC_OP2_REG_SHIFT_REG(ROR_REG##s)                                                           \
     A_##x(1)                                                                                       \
   }
 
 #define A_AND(c)                                                                                   \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
   u32 res = a & b;                                                                                 \
   if (c)                                                                                           \
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(res & ~1);                                                                         \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;                                                     \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;                                                     \
   }
 
 #define A_AND_S(c)                                                                                 \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
   u32 res = a & b;                                                                                 \
   cpu->SetNZ(res & 0x80000000, !res);                                                              \
   if (c)                                                                                           \
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(res, true);                                                                        \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;                                                     \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;                                                     \
   }
 
 A_IMPLEMENT_ALU_OP(AND, _S)
 
 #define A_EOR(c)                                                                                   \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
   u32 res = a ^ b;                                                                                 \
   if (c)                                                                                           \
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(res & ~1);                                                                         \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;                                                     \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;                                                     \
   }
 
 #define A_EOR_S(c)                                                                                 \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
   u32 res = a ^ b;                                                                                 \
   cpu->SetNZ(res & 0x80000000, !res);                                                              \
   if (c)                                                                                           \
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(res, true);                                                                        \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;                                                     \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;                                                     \
   }
 
 A_IMPLEMENT_ALU_OP(EOR, _S)
 
 #define A_SUB(c)                                                                                   \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
   u32 res = a - b;                                                                                 \
   if (c)                                                                                           \
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(res & ~1);                                                                         \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;                                                     \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;                                                     \
   }
 
 #define A_SUB_S(c)                                                                                 \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
   u32 res = a - b;                                                                                 \
   cpu->SetNZCV(res & 0x80000000, !res, CarrySub(a, b), OverflowSub(a, b));                         \
   if (c)                                                                                           \
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(res, true);                                                                        \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;                                                     \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;                                                     \
   }
 
 A_IMPLEMENT_ALU_OP(SUB, )
 
 #define A_RSB(c)                                                                                   \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
   u32 res = b - a;                                                                                 \
   if (c)                                                                                           \
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(res & ~1);                                                                         \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;                                                     \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;                                                     \
   }
 
 #define A_RSB_S(c)                                                                                 \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
   u32 res = b - a;                                                                                 \
   cpu->SetNZCV(res & 0x80000000, !res, CarrySub(b, a), OverflowSub(b, a));                         \
   if (c)                                                                                           \
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(res, true);                                                                        \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;                                                     \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;                                                     \
   }
 
 A_IMPLEMENT_ALU_OP(RSB, )
 
 #define A_ADD(c)                                                                                   \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
   u32 res = a + b;                                                                                 \
   if (c)                                                                                           \
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(res & ~1);                                                                         \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;                                                     \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;                                                     \
   }
 
 #define A_ADD_S(c)                                                                                 \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
   u32 res = a + b;                                                                                 \
   cpu->SetNZCV(res & 0x80000000, !res, CarryAdd(a, b), OverflowAdd(a, b));                         \
   if (c)                                                                                           \
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(res, true);                                                                        \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;                                                     \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;                                                     \
   }
 
 A_IMPLEMENT_ALU_OP(ADD, )
 
 #define A_ADC(c)                                                                                   \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
-  u32 res = a + b + (cpu->CPSR & 0x20000000 ? 1 : 0);                                              \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
+  u32 res = a + b + (cpu->m_reg_cpsr & 0x20000000 ? 1 : 0);                                        \
   if (c)                                                                                           \
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(res & ~1);                                                                         \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;                                                     \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;                                                     \
   }
 
 #define A_ADC_S(c)                                                                                 \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
   u32 res_tmp = a + b;                                                                             \
-  u32 carry = (cpu->CPSR & 0x20000000 ? 1 : 0);                                                    \
+  u32 carry = (cpu->m_reg_cpsr & 0x20000000 ? 1 : 0);                                              \
   u32 res = res_tmp + carry;                                                                       \
   cpu->SetNZCV(res & 0x80000000, !res, CarryAdd(a, b) || CarryAdd(res_tmp, carry),                 \
                OverflowAdc(a, b, carry));                                                          \
@@ -546,37 +547,37 @@ A_IMPLEMENT_ALU_OP(ADD, )
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(res, true);                                                                        \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;                                                     \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;                                                     \
   }
 
 A_IMPLEMENT_ALU_OP(ADC, )
 
 #define A_SBC(c)                                                                                   \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
-  u32 res = a - b - (cpu->CPSR & 0x20000000 ? 0 : 1);                                              \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
+  u32 res = a - b - (cpu->m_reg_cpsr & 0x20000000 ? 0 : 1);                                        \
   if (c)                                                                                           \
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(res & ~1);                                                                         \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;                                                     \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;                                                     \
   }
 
 #define A_SBC_S(c)                                                                                 \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
   u32 res_tmp = a - b;                                                                             \
-  u32 carry = (cpu->CPSR & 0x20000000 ? 0 : 1);                                                    \
+  u32 carry = (cpu->m_reg_cpsr & 0x20000000 ? 0 : 1);                                              \
   u32 res = res_tmp - carry;                                                                       \
   cpu->SetNZCV(res & 0x80000000, !res, CarrySub(a, b) && CarrySub(res_tmp, carry),                 \
                OverflowSbc(a, b, carry));                                                          \
@@ -584,37 +585,37 @@ A_IMPLEMENT_ALU_OP(ADC, )
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(res, true);                                                                        \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;                                                     \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;                                                     \
   }
 
 A_IMPLEMENT_ALU_OP(SBC, )
 
 #define A_RSC(c)                                                                                   \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
-  u32 res = b - a - (cpu->CPSR & 0x20000000 ? 0 : 1);                                              \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
+  u32 res = b - a - (cpu->m_reg_cpsr & 0x20000000 ? 0 : 1);                                        \
   if (c)                                                                                           \
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(res & ~1);                                                                         \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;                                                     \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;                                                     \
   }
 
 #define A_RSC_S(c)                                                                                 \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
   u32 res_tmp = b - a;                                                                             \
-  u32 carry = (cpu->CPSR & 0x20000000 ? 0 : 1);                                                    \
+  u32 carry = (cpu->m_reg_cpsr & 0x20000000 ? 0 : 1);                                              \
   u32 res = res_tmp - carry;                                                                       \
   cpu->SetNZCV(res & 0x80000000, !res, CarrySub(b, a) && CarrySub(res_tmp, carry),                 \
                OverflowSbc(b, a, carry));                                                          \
@@ -622,19 +623,19 @@ A_IMPLEMENT_ALU_OP(SBC, )
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(res, true);                                                                        \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;                                                     \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;                                                     \
   }
 
 A_IMPLEMENT_ALU_OP(RSC, )
 
 #define A_TST(c)                                                                                   \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
   u32 res = a & b;                                                                                 \
   cpu->SetNZ(res & 0x80000000, !res);                                                              \
   if (c)                                                                                           \
@@ -645,7 +646,7 @@ A_IMPLEMENT_ALU_OP(RSC, )
 A_IMPLEMENT_ALU_TEST(TST, _S)
 
 #define A_TEQ(c)                                                                                   \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
   u32 res = a ^ b;                                                                                 \
   cpu->SetNZ(res & 0x80000000, !res);                                                              \
   if (c)                                                                                           \
@@ -656,7 +657,7 @@ A_IMPLEMENT_ALU_TEST(TST, _S)
 A_IMPLEMENT_ALU_TEST(TEQ, _S)
 
 #define A_CMP(c)                                                                                   \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
   u32 res = a - b;                                                                                 \
   cpu->SetNZCV(res & 0x80000000, !res, CarrySub(a, b), OverflowSub(a, b));                         \
   if (c)                                                                                           \
@@ -667,7 +668,7 @@ A_IMPLEMENT_ALU_TEST(TEQ, _S)
 A_IMPLEMENT_ALU_TEST(CMP, )
 
 #define A_CMN(c)                                                                                   \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
   u32 res = a + b;                                                                                 \
   cpu->SetNZCV(res & 0x80000000, !res, CarryAdd(a, b), OverflowAdd(a, b));                         \
   if (c)                                                                                           \
@@ -678,36 +679,36 @@ A_IMPLEMENT_ALU_TEST(CMP, )
 A_IMPLEMENT_ALU_TEST(CMN, )
 
 #define A_ORR(c)                                                                                   \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
   u32 res = a | b;                                                                                 \
   if (c)                                                                                           \
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(res & ~1);                                                                         \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;                                                     \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;                                                     \
   }
 
 #define A_ORR_S(c)                                                                                 \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
   u32 res = a | b;                                                                                 \
   cpu->SetNZ(res & 0x80000000, !res);                                                              \
   if (c)                                                                                           \
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(res, true);                                                                        \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;                                                     \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;                                                     \
   }
 
 A_IMPLEMENT_ALU_OP(ORR, _S)
@@ -717,13 +718,13 @@ A_IMPLEMENT_ALU_OP(ORR, _S)
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(b & ~1);                                                                           \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = b;                                                       \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = b;                                                       \
   }
 
 #define A_MOV_S(c)                                                                                 \
@@ -732,32 +733,32 @@ A_IMPLEMENT_ALU_OP(ORR, _S)
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(b, true);                                                                          \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = b;                                                       \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = b;                                                       \
   }
 
 A_IMPLEMENT_ALU_OP(MOV, _S)
 
 // debug hook
 
-void A_MOV_REG_LSL_IMM_DBG(ARM* cpu)
+void ARMInterpreter::A_MOV_REG_LSL_IMM_DBG(ARMv5* cpu)
 {
   A_MOV_REG_LSL_IMM(cpu);
 
 #if 0
     // nocash-style debugging hook
-    if ( cpu->CurInstr == 0xE1A0C00C &&                   // mov r12, r12
-        (cpu->NextInstr[0] & 0xFF000000) == 0xEA000000 && // branch
-        (cpu->NextInstr[1] & 0xFFFF) == 0x6464)
+    if ( cpu->m_inst == 0xE1A0C00C &&                   // mov r12, r12
+        (cpu->m_next_inst[0] & 0xFF000000) == 0xEA000000 && // branch
+        (cpu->m_next_inst[1] & 0xFFFF) == 0x6464)
     {
         // GBATek says the two bytes after the 2nd ID are _reserved_ for flags
         // but since they serve no purpose ATTOW, we can skip them
-        u32 addr = cpu->R[15] + 4; // Skip 2nd ID and flags
+        u32 addr = cpu->m_reg[15] + 4; // Skip 2nd ID and flags
         // TODO: Pass flags to NocashPrint
         cpu->NDS.NocashPrint(cpu->Num, addr);
     }
@@ -765,36 +766,36 @@ void A_MOV_REG_LSL_IMM_DBG(ARM* cpu)
 }
 
 #define A_BIC(c)                                                                                   \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
   u32 res = a & ~b;                                                                                \
   if (c)                                                                                           \
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(res & ~1);                                                                         \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;                                                     \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;                                                     \
   }
 
 #define A_BIC_S(c)                                                                                 \
-  u32 a = cpu->R[(cpu->CurInstr >> 16) & 0xF];                                                     \
+  u32 a = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];                                                     \
   u32 res = a & ~b;                                                                                \
   cpu->SetNZ(res & 0x80000000, !res);                                                              \
   if (c)                                                                                           \
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(res, true);                                                                        \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;                                                     \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;                                                     \
   }
 
 A_IMPLEMENT_ALU_OP(BIC, _S)
@@ -805,13 +806,13 @@ A_IMPLEMENT_ALU_OP(BIC, _S)
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(b & ~1);                                                                           \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = b;                                                       \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = b;                                                       \
   }
 
 #define A_MVN_S(c)                                                                                 \
@@ -821,26 +822,26 @@ A_IMPLEMENT_ALU_OP(BIC, _S)
     cpu->AddCycles_CI(c);                                                                          \
   else                                                                                             \
     cpu->AddCycles_C();                                                                            \
-  if (((cpu->CurInstr >> 12) & 0xF) == 15)                                                         \
+  if (((cpu->m_inst >> 12) & 0xF) == 15)                                                         \
   {                                                                                                \
     cpu->JumpTo(b, true);                                                                          \
   }                                                                                                \
   else                                                                                             \
   {                                                                                                \
-    cpu->R[(cpu->CurInstr >> 12) & 0xF] = b;                                                       \
+    cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = b;                                                       \
   }
 
 A_IMPLEMENT_ALU_OP(MVN, _S)
 
-void A_MUL(ARM* cpu)
+void ARMInterpreter::A_MUL(ARMv5* cpu)
 {
-  u32 rm = cpu->R[cpu->CurInstr & 0xF];
-  u32 rs = cpu->R[(cpu->CurInstr >> 8) & 0xF];
+  u32 rm = cpu->m_reg[cpu->m_inst & 0xF];
+  u32 rs = cpu->m_reg[(cpu->m_inst >> 8) & 0xF];
 
   u32 res = rm * rs;
 
-  cpu->R[(cpu->CurInstr >> 16) & 0xF] = res;
-  if (cpu->CurInstr & (1 << 20))
+  cpu->m_reg[(cpu->m_inst >> 16) & 0xF] = res;
+  if (cpu->m_inst & (1 << 20))
   {
     cpu->SetNZ(res & 0x80000000, !res);
     if (cpu->Num == 1)
@@ -849,7 +850,7 @@ void A_MUL(ARM* cpu)
 
   u32 cycles;
   if (cpu->Num == 0)
-    cycles = (cpu->CurInstr & (1 << 20)) ? 3 : 1;
+    cycles = (cpu->m_inst & (1 << 20)) ? 3 : 1;
   else
   {
     if ((rs & 0xFFFFFF00) == 0x00000000 || (rs & 0xFFFFFF00) == 0xFFFFFF00)
@@ -865,16 +866,16 @@ void A_MUL(ARM* cpu)
   cpu->AddCycles_CI(cycles);
 }
 
-void A_MLA(ARM* cpu)
+void ARMInterpreter::A_MLA(ARMv5* cpu)
 {
-  u32 rm = cpu->R[cpu->CurInstr & 0xF];
-  u32 rs = cpu->R[(cpu->CurInstr >> 8) & 0xF];
-  u32 rn = cpu->R[(cpu->CurInstr >> 12) & 0xF];
+  u32 rm = cpu->m_reg[cpu->m_inst & 0xF];
+  u32 rs = cpu->m_reg[(cpu->m_inst >> 8) & 0xF];
+  u32 rn = cpu->m_reg[(cpu->m_inst >> 12) & 0xF];
 
   u32 res = (rm * rs) + rn;
 
-  cpu->R[(cpu->CurInstr >> 16) & 0xF] = res;
-  if (cpu->CurInstr & (1 << 20))
+  cpu->m_reg[(cpu->m_inst >> 16) & 0xF] = res;
+  if (cpu->m_inst & (1 << 20))
   {
     cpu->SetNZ(res & 0x80000000, !res);
     if (cpu->Num == 1)
@@ -883,7 +884,7 @@ void A_MLA(ARM* cpu)
 
   u32 cycles;
   if (cpu->Num == 0)
-    cycles = (cpu->CurInstr & (1 << 20)) ? 3 : 1;
+    cycles = (cpu->m_inst & (1 << 20)) ? 3 : 1;
   else
   {
     if ((rs & 0xFFFFFF00) == 0x00000000 || (rs & 0xFFFFFF00) == 0xFFFFFF00)
@@ -899,58 +900,58 @@ void A_MLA(ARM* cpu)
   cpu->AddCycles_CI(cycles);
 }
 
-void A_UMULL(ARM* cpu)
+void ARMInterpreter::A_UMULL(ARMv5* cpu)
 {
-  u32 rm = cpu->R[cpu->CurInstr & 0xF];
-  u32 rs = cpu->R[(cpu->CurInstr >> 8) & 0xF];
+  u32 rm = cpu->m_reg[cpu->m_inst & 0xF];
+  u32 rs = cpu->m_reg[(cpu->m_inst >> 8) & 0xF];
 
   u64 res = (u64)rm * (u64)rs;
 
-  cpu->R[(cpu->CurInstr >> 12) & 0xF] = (u32)res;
-  cpu->R[(cpu->CurInstr >> 16) & 0xF] = (u32)(res >> 32ULL);
-  if (cpu->CurInstr & (1 << 20))
+  cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = (u32)res;
+  cpu->m_reg[(cpu->m_inst >> 16) & 0xF] = (u32)(res >> 32ULL);
+  if (cpu->m_inst & (1 << 20))
   {
     cpu->SetNZ((u32)(res >> 63ULL), !res);
   }
 
-  u32 cycles = (cpu->CurInstr & (1 << 20)) ? 3 : 1;
+  u32 cycles = (cpu->m_inst & (1 << 20)) ? 3 : 1;
 
   cpu->AddCycles_CI(cycles);
 }
 
-void A_UMLAL(ARM* cpu)
+void ARMInterpreter::A_UMLAL(ARMv5* cpu)
 {
-  u32 rm = cpu->R[cpu->CurInstr & 0xF];
-  u32 rs = cpu->R[(cpu->CurInstr >> 8) & 0xF];
+  u32 rm = cpu->m_reg[cpu->m_inst & 0xF];
+  u32 rs = cpu->m_reg[(cpu->m_inst >> 8) & 0xF];
 
   u64 res = (u64)rm * (u64)rs;
 
-  u64 rd = (u64)cpu->R[(cpu->CurInstr >> 12) & 0xF] |
-           ((u64)cpu->R[(cpu->CurInstr >> 16) & 0xF] << 32ULL);
+  u64 rd = (u64)cpu->m_reg[(cpu->m_inst >> 12) & 0xF] |
+           ((u64)cpu->m_reg[(cpu->m_inst >> 16) & 0xF] << 32ULL);
   res += rd;
 
-  cpu->R[(cpu->CurInstr >> 12) & 0xF] = (u32)res;
-  cpu->R[(cpu->CurInstr >> 16) & 0xF] = (u32)(res >> 32ULL);
-  if (cpu->CurInstr & (1 << 20))
+  cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = (u32)res;
+  cpu->m_reg[(cpu->m_inst >> 16) & 0xF] = (u32)(res >> 32ULL);
+  if (cpu->m_inst & (1 << 20))
   {
     cpu->SetNZ((u32)(res >> 63ULL), !res);
   }
 
-  u32 cycles = (cpu->CurInstr & (1 << 20)) ? 3 : 1;
+  u32 cycles = (cpu->m_inst & (1 << 20)) ? 3 : 1;
 
   cpu->AddCycles_CI(cycles);
 }
 
-void A_SMULL(ARM* cpu)
+void ARMInterpreter::A_SMULL(ARMv5* cpu)
 {
-  u32 rm = cpu->R[cpu->CurInstr & 0xF];
-  u32 rs = cpu->R[(cpu->CurInstr >> 8) & 0xF];
+  u32 rm = cpu->m_reg[cpu->m_inst & 0xF];
+  u32 rs = cpu->m_reg[(cpu->m_inst >> 8) & 0xF];
 
   s64 res = (s64)(s32)rm * (s64)(s32)rs;
 
-  cpu->R[(cpu->CurInstr >> 12) & 0xF] = (u32)res;
-  cpu->R[(cpu->CurInstr >> 16) & 0xF] = (u32)(res >> 32ULL);
-  if (cpu->CurInstr & (1 << 20))
+  cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = (u32)res;
+  cpu->m_reg[(cpu->m_inst >> 16) & 0xF] = (u32)(res >> 32ULL);
+  if (cpu->m_inst & (1 << 20))
   {
     cpu->SetNZ((u32)(res >> 63ULL), !res);
     if (cpu->Num == 1)
@@ -959,7 +960,7 @@ void A_SMULL(ARM* cpu)
 
   u32 cycles;
   if (cpu->Num == 0)
-    cycles = (cpu->CurInstr & (1 << 20)) ? 3 : 1;
+    cycles = (cpu->m_inst & (1 << 20)) ? 3 : 1;
   else
   {
     if ((rs & 0xFFFFFF00) == 0x00000000 || (rs & 0xFFFFFF00) == 0xFFFFFF00)
@@ -975,20 +976,20 @@ void A_SMULL(ARM* cpu)
   cpu->AddCycles_CI(cycles);
 }
 
-void A_SMLAL(ARM* cpu)
+void ARMInterpreter::A_SMLAL(ARMv5* cpu)
 {
-  u32 rm = cpu->R[cpu->CurInstr & 0xF];
-  u32 rs = cpu->R[(cpu->CurInstr >> 8) & 0xF];
+  u32 rm = cpu->m_reg[cpu->m_inst & 0xF];
+  u32 rs = cpu->m_reg[(cpu->m_inst >> 8) & 0xF];
 
   s64 res = (s64)(s32)rm * (s64)(s32)rs;
 
-  s64 rd = (s64)((u64)cpu->R[(cpu->CurInstr >> 12) & 0xF] |
-                 ((u64)cpu->R[(cpu->CurInstr >> 16) & 0xF] << 32ULL));
+  s64 rd = (s64)((u64)cpu->m_reg[(cpu->m_inst >> 12) & 0xF] |
+                 ((u64)cpu->m_reg[(cpu->m_inst >> 16) & 0xF] << 32ULL));
   res += rd;
 
-  cpu->R[(cpu->CurInstr >> 12) & 0xF] = (u32)res;
-  cpu->R[(cpu->CurInstr >> 16) & 0xF] = (u32)(res >> 32ULL);
-  if (cpu->CurInstr & (1 << 20))
+  cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = (u32)res;
+  cpu->m_reg[(cpu->m_inst >> 16) & 0xF] = (u32)(res >> 32ULL);
+  if (cpu->m_inst & (1 << 20))
   {
     cpu->SetNZ((u32)(res >> 63ULL), !res);
     if (cpu->Num == 1)
@@ -997,7 +998,7 @@ void A_SMLAL(ARM* cpu)
 
   u32 cycles;
   if (cpu->Num == 0)
-    cycles = (cpu->CurInstr & (1 << 20)) ? 3 : 1;
+    cycles = (cpu->m_inst & (1 << 20)) ? 3 : 1;
   else
   {
     if ((rs & 0xFFFFFF00) == 0x00000000 || (rs & 0xFFFFFF00) == 0xFFFFFF00)
@@ -1013,20 +1014,20 @@ void A_SMLAL(ARM* cpu)
   cpu->AddCycles_CI(cycles);
 }
 
-void A_SMLAxy(ARM* cpu)
+void ARMInterpreter::A_SMLAxy(ARMv5* cpu)
 {
   if (cpu->Num != 0)
     return;
 
-  u32 rm = cpu->R[cpu->CurInstr & 0xF];
-  u32 rs = cpu->R[(cpu->CurInstr >> 8) & 0xF];
-  u32 rn = cpu->R[(cpu->CurInstr >> 12) & 0xF];
+  u32 rm = cpu->m_reg[cpu->m_inst & 0xF];
+  u32 rs = cpu->m_reg[(cpu->m_inst >> 8) & 0xF];
+  u32 rn = cpu->m_reg[(cpu->m_inst >> 12) & 0xF];
 
-  if (cpu->CurInstr & (1 << 5))
+  if (cpu->m_inst & (1 << 5))
     rm >>= 16;
   else
     rm &= 0xFFFF;
-  if (cpu->CurInstr & (1 << 6))
+  if (cpu->m_inst & (1 << 6))
     rs >>= 16;
   else
     rs &= 0xFFFF;
@@ -1034,23 +1035,23 @@ void A_SMLAxy(ARM* cpu)
   u32 res_mul = ((s16)rm * (s16)rs);
   u32 res = res_mul + rn;
 
-  cpu->R[(cpu->CurInstr >> 16) & 0xF] = res;
+  cpu->m_reg[(cpu->m_inst >> 16) & 0xF] = res;
   if (OverflowAdd(res_mul, rn))
-    cpu->CPSR |= 0x08000000;
+    cpu->m_reg_cpsr |= 0x08000000;
 
   cpu->AddCycles_C();  // TODO: interlock??
 }
 
-void A_SMLAWy(ARM* cpu)
+void ARMInterpreter::A_SMLAWy(ARMv5* cpu)
 {
   if (cpu->Num != 0)
     return;
 
-  u32 rm = cpu->R[cpu->CurInstr & 0xF];
-  u32 rs = cpu->R[(cpu->CurInstr >> 8) & 0xF];
-  u32 rn = cpu->R[(cpu->CurInstr >> 12) & 0xF];
+  u32 rm = cpu->m_reg[cpu->m_inst & 0xF];
+  u32 rs = cpu->m_reg[(cpu->m_inst >> 8) & 0xF];
+  u32 rn = cpu->m_reg[(cpu->m_inst >> 12) & 0xF];
 
-  if (cpu->CurInstr & (1 << 6))
+  if (cpu->m_inst & (1 << 6))
     rs >>= 16;
   else
     rs &= 0xFFFF;
@@ -1058,90 +1059,90 @@ void A_SMLAWy(ARM* cpu)
   u32 res_mul = ((s64)(s32)rm * (s16)rs) >> 16;
   u32 res = res_mul + rn;
 
-  cpu->R[(cpu->CurInstr >> 16) & 0xF] = res;
+  cpu->m_reg[(cpu->m_inst >> 16) & 0xF] = res;
   if (OverflowAdd(res_mul, rn))
-    cpu->CPSR |= 0x08000000;
+    cpu->m_reg_cpsr |= 0x08000000;
 
   cpu->AddCycles_C();  // TODO: interlock??
 }
 
-void A_SMULxy(ARM* cpu)
+void ARMInterpreter::A_SMULxy(ARMv5* cpu)
 {
   if (cpu->Num != 0)
     return;
 
-  u32 rm = cpu->R[cpu->CurInstr & 0xF];
-  u32 rs = cpu->R[(cpu->CurInstr >> 8) & 0xF];
+  u32 rm = cpu->m_reg[cpu->m_inst & 0xF];
+  u32 rs = cpu->m_reg[(cpu->m_inst >> 8) & 0xF];
 
-  if (cpu->CurInstr & (1 << 5))
+  if (cpu->m_inst & (1 << 5))
     rm >>= 16;
   else
     rm &= 0xFFFF;
-  if (cpu->CurInstr & (1 << 6))
+  if (cpu->m_inst & (1 << 6))
     rs >>= 16;
   else
     rs &= 0xFFFF;
 
   u32 res = ((s16)rm * (s16)rs);
 
-  cpu->R[(cpu->CurInstr >> 16) & 0xF] = res;
+  cpu->m_reg[(cpu->m_inst >> 16) & 0xF] = res;
   cpu->AddCycles_C();  // TODO: interlock??
 }
 
-void A_SMULWy(ARM* cpu)
+void ARMInterpreter::A_SMULWy(ARMv5* cpu)
 {
   if (cpu->Num != 0)
     return;
 
-  u32 rm = cpu->R[cpu->CurInstr & 0xF];
-  u32 rs = cpu->R[(cpu->CurInstr >> 8) & 0xF];
+  u32 rm = cpu->m_reg[cpu->m_inst & 0xF];
+  u32 rs = cpu->m_reg[(cpu->m_inst >> 8) & 0xF];
 
-  if (cpu->CurInstr & (1 << 6))
+  if (cpu->m_inst & (1 << 6))
     rs >>= 16;
   else
     rs &= 0xFFFF;
 
   u32 res = ((s64)(s32)rm * (s16)rs) >> 16;
 
-  cpu->R[(cpu->CurInstr >> 16) & 0xF] = res;
+  cpu->m_reg[(cpu->m_inst >> 16) & 0xF] = res;
   cpu->AddCycles_C();  // TODO: interlock??
 }
 
-void A_SMLALxy(ARM* cpu)
+void ARMInterpreter::A_SMLALxy(ARMv5* cpu)
 {
   if (cpu->Num != 0)
     return;
 
-  u32 rm = cpu->R[cpu->CurInstr & 0xF];
-  u32 rs = cpu->R[(cpu->CurInstr >> 8) & 0xF];
+  u32 rm = cpu->m_reg[cpu->m_inst & 0xF];
+  u32 rs = cpu->m_reg[(cpu->m_inst >> 8) & 0xF];
 
-  if (cpu->CurInstr & (1 << 5))
+  if (cpu->m_inst & (1 << 5))
     rm >>= 16;
   else
     rm &= 0xFFFF;
-  if (cpu->CurInstr & (1 << 6))
+  if (cpu->m_inst & (1 << 6))
     rs >>= 16;
   else
     rs &= 0xFFFF;
 
   s64 res = (s64)(s16)rm * (s64)(s16)rs;
 
-  s64 rd = (s64)((u64)cpu->R[(cpu->CurInstr >> 12) & 0xF] |
-                 ((u64)cpu->R[(cpu->CurInstr >> 16) & 0xF] << 32ULL));
+  s64 rd = (s64)((u64)cpu->m_reg[(cpu->m_inst >> 12) & 0xF] |
+                 ((u64)cpu->m_reg[(cpu->m_inst >> 16) & 0xF] << 32ULL));
   res += rd;
 
-  cpu->R[(cpu->CurInstr >> 12) & 0xF] = (u32)res;
-  cpu->R[(cpu->CurInstr >> 16) & 0xF] = (u32)(res >> 32ULL);
+  cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = (u32)res;
+  cpu->m_reg[(cpu->m_inst >> 16) & 0xF] = (u32)(res >> 32ULL);
 
   cpu->AddCycles_CI(1);  // TODO: interlock??
 }
 
-void A_CLZ(ARM* cpu)
+void ARMInterpreter::A_CLZ(ARMv5* cpu)
 {
   if (cpu->Num != 0)
     return A_UNK(cpu);
 
-  u32 val = cpu->R[cpu->CurInstr & 0xF];
+  u32 val = cpu->m_reg[cpu->m_inst & 0xF];
 
   u32 res = 0;
   while ((val & 0xFF000000) == 0)
@@ -1157,60 +1158,60 @@ void A_CLZ(ARM* cpu)
     val |= 0x1;
   }
 
-  cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;
+  cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;
   cpu->AddCycles_C();
 }
 
-void A_QADD(ARM* cpu)
+void ARMInterpreter::A_QADD(ARMv5* cpu)
 {
   if (cpu->Num != 0)
     return A_UNK(cpu);
 
-  u32 rm = cpu->R[cpu->CurInstr & 0xF];
-  u32 rn = cpu->R[(cpu->CurInstr >> 16) & 0xF];
+  u32 rm = cpu->m_reg[cpu->m_inst & 0xF];
+  u32 rn = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];
 
   u32 res = rm + rn;
   if (OverflowAdd(rm, rn))
   {
     res = (res & 0x80000000) ? 0x7FFFFFFF : 0x80000000;
-    cpu->CPSR |= 0x08000000;
+    cpu->m_reg_cpsr |= 0x08000000;
   }
 
-  cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;
+  cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;
   cpu->AddCycles_C();  // TODO: interlock??
 }
 
-void A_QSUB(ARM* cpu)
+void ARMInterpreter::A_QSUB(ARMv5* cpu)
 {
   if (cpu->Num != 0)
     return A_UNK(cpu);
 
-  u32 rm = cpu->R[cpu->CurInstr & 0xF];
-  u32 rn = cpu->R[(cpu->CurInstr >> 16) & 0xF];
+  u32 rm = cpu->m_reg[cpu->m_inst & 0xF];
+  u32 rn = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];
 
   u32 res = rm - rn;
   if (OverflowSub(rm, rn))
   {
     res = (res & 0x80000000) ? 0x7FFFFFFF : 0x80000000;
-    cpu->CPSR |= 0x08000000;
+    cpu->m_reg_cpsr |= 0x08000000;
   }
 
-  cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;
+  cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;
   cpu->AddCycles_C();  // TODO: interlock??
 }
 
-void A_QDADD(ARM* cpu)
+void ARMInterpreter::A_QDADD(ARMv5* cpu)
 {
   if (cpu->Num != 0)
     return A_UNK(cpu);
 
-  u32 rm = cpu->R[cpu->CurInstr & 0xF];
-  u32 rn = cpu->R[(cpu->CurInstr >> 16) & 0xF];
+  u32 rm = cpu->m_reg[cpu->m_inst & 0xF];
+  u32 rn = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];
 
   if (OverflowAdd(rn, rn))
   {
     rn = (rn & 0x80000000) ? 0x80000000 : 0x7FFFFFFF;
-    cpu->CPSR |= 0x08000000;  // CHECKME
+    cpu->m_reg_cpsr |= 0x08000000;  // CHECKME
   }
   else
     rn <<= 1;
@@ -1219,25 +1220,25 @@ void A_QDADD(ARM* cpu)
   if (OverflowAdd(rm, rn))
   {
     res = (res & 0x80000000) ? 0x7FFFFFFF : 0x80000000;
-    cpu->CPSR |= 0x08000000;
+    cpu->m_reg_cpsr |= 0x08000000;
   }
 
-  cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;
+  cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;
   cpu->AddCycles_C();  // TODO: interlock??
 }
 
-void A_QDSUB(ARM* cpu)
+void ARMInterpreter::A_QDSUB(ARMv5* cpu)
 {
   if (cpu->Num != 0)
     return A_UNK(cpu);
 
-  u32 rm = cpu->R[cpu->CurInstr & 0xF];
-  u32 rn = cpu->R[(cpu->CurInstr >> 16) & 0xF];
+  u32 rm = cpu->m_reg[cpu->m_inst & 0xF];
+  u32 rn = cpu->m_reg[(cpu->m_inst >> 16) & 0xF];
 
   if (OverflowAdd(rn, rn))
   {
     rn = (rn & 0x80000000) ? 0x80000000 : 0x7FFFFFFF;
-    cpu->CPSR |= 0x08000000;  // CHECKME
+    cpu->m_reg_cpsr |= 0x08000000;  // CHECKME
   }
   else
     rn <<= 1;
@@ -1246,260 +1247,260 @@ void A_QDSUB(ARM* cpu)
   if (OverflowSub(rm, rn))
   {
     res = (res & 0x80000000) ? 0x7FFFFFFF : 0x80000000;
-    cpu->CPSR |= 0x08000000;
+    cpu->m_reg_cpsr |= 0x08000000;
   }
 
-  cpu->R[(cpu->CurInstr >> 12) & 0xF] = res;
+  cpu->m_reg[(cpu->m_inst >> 12) & 0xF] = res;
   cpu->AddCycles_C();  // TODO: interlock??
 }
 
 // ---- THUMB ----------------------------------
 
-void T_LSL_IMM(ARM* cpu)
+void ARMInterpreter::T_LSL_IMM(ARMv5* cpu)
 {
-  u32 op = cpu->R[(cpu->CurInstr >> 3) & 0x7];
-  u32 s = (cpu->CurInstr >> 6) & 0x1F;
+  u32 op = cpu->m_reg[(cpu->m_inst >> 3) & 0x7];
+  u32 s = (cpu->m_inst >> 6) & 0x1F;
   LSL_IMM_S(op, s);
-  cpu->R[cpu->CurInstr & 0x7] = op;
+  cpu->m_reg[cpu->m_inst & 0x7] = op;
   cpu->SetNZ(op & 0x80000000, !op);
   cpu->AddCycles_C();
 }
 
-void T_LSR_IMM(ARM* cpu)
+void ARMInterpreter::T_LSR_IMM(ARMv5* cpu)
 {
-  u32 op = cpu->R[(cpu->CurInstr >> 3) & 0x7];
-  u32 s = (cpu->CurInstr >> 6) & 0x1F;
+  u32 op = cpu->m_reg[(cpu->m_inst >> 3) & 0x7];
+  u32 s = (cpu->m_inst >> 6) & 0x1F;
   LSR_IMM_S(op, s);
-  cpu->R[cpu->CurInstr & 0x7] = op;
+  cpu->m_reg[cpu->m_inst & 0x7] = op;
   cpu->SetNZ(op & 0x80000000, !op);
   cpu->AddCycles_C();
 }
 
-void T_ASR_IMM(ARM* cpu)
+void ARMInterpreter::T_ASR_IMM(ARMv5* cpu)
 {
-  u32 op = cpu->R[(cpu->CurInstr >> 3) & 0x7];
-  u32 s = (cpu->CurInstr >> 6) & 0x1F;
+  u32 op = cpu->m_reg[(cpu->m_inst >> 3) & 0x7];
+  u32 s = (cpu->m_inst >> 6) & 0x1F;
   ASR_IMM_S(op, s);
-  cpu->R[cpu->CurInstr & 0x7] = op;
+  cpu->m_reg[cpu->m_inst & 0x7] = op;
   cpu->SetNZ(op & 0x80000000, !op);
   cpu->AddCycles_C();
 }
 
-void T_ADD_REG_(ARM* cpu)
+void ARMInterpreter::T_ADD_REG_(ARMv5* cpu)
 {
-  u32 a = cpu->R[(cpu->CurInstr >> 3) & 0x7];
-  u32 b = cpu->R[(cpu->CurInstr >> 6) & 0x7];
+  u32 a = cpu->m_reg[(cpu->m_inst >> 3) & 0x7];
+  u32 b = cpu->m_reg[(cpu->m_inst >> 6) & 0x7];
   u32 res = a + b;
-  cpu->R[cpu->CurInstr & 0x7] = res;
+  cpu->m_reg[cpu->m_inst & 0x7] = res;
   cpu->SetNZCV(res & 0x80000000, !res, CarryAdd(a, b), OverflowAdd(a, b));
   cpu->AddCycles_C();
 }
 
-void T_SUB_REG_(ARM* cpu)
+void ARMInterpreter::T_SUB_REG_(ARMv5* cpu)
 {
-  u32 a = cpu->R[(cpu->CurInstr >> 3) & 0x7];
-  u32 b = cpu->R[(cpu->CurInstr >> 6) & 0x7];
+  u32 a = cpu->m_reg[(cpu->m_inst >> 3) & 0x7];
+  u32 b = cpu->m_reg[(cpu->m_inst >> 6) & 0x7];
   u32 res = a - b;
-  cpu->R[cpu->CurInstr & 0x7] = res;
+  cpu->m_reg[cpu->m_inst & 0x7] = res;
   cpu->SetNZCV(res & 0x80000000, !res, CarrySub(a, b), OverflowSub(a, b));
   cpu->AddCycles_C();
 }
 
-void T_ADD_IMM_(ARM* cpu)
+void ARMInterpreter::T_ADD_IMM_(ARMv5* cpu)
 {
-  u32 a = cpu->R[(cpu->CurInstr >> 3) & 0x7];
-  u32 b = (cpu->CurInstr >> 6) & 0x7;
+  u32 a = cpu->m_reg[(cpu->m_inst >> 3) & 0x7];
+  u32 b = (cpu->m_inst >> 6) & 0x7;
   u32 res = a + b;
-  cpu->R[cpu->CurInstr & 0x7] = res;
+  cpu->m_reg[cpu->m_inst & 0x7] = res;
   cpu->SetNZCV(res & 0x80000000, !res, CarryAdd(a, b), OverflowAdd(a, b));
   cpu->AddCycles_C();
 }
 
-void T_SUB_IMM_(ARM* cpu)
+void ARMInterpreter::T_SUB_IMM_(ARMv5* cpu)
 {
-  u32 a = cpu->R[(cpu->CurInstr >> 3) & 0x7];
-  u32 b = (cpu->CurInstr >> 6) & 0x7;
+  u32 a = cpu->m_reg[(cpu->m_inst >> 3) & 0x7];
+  u32 b = (cpu->m_inst >> 6) & 0x7;
   u32 res = a - b;
-  cpu->R[cpu->CurInstr & 0x7] = res;
+  cpu->m_reg[cpu->m_inst & 0x7] = res;
   cpu->SetNZCV(res & 0x80000000, !res, CarrySub(a, b), OverflowSub(a, b));
   cpu->AddCycles_C();
 }
 
-void T_MOV_IMM(ARM* cpu)
+void ARMInterpreter::T_MOV_IMM(ARMv5* cpu)
 {
-  u32 b = cpu->CurInstr & 0xFF;
-  cpu->R[(cpu->CurInstr >> 8) & 0x7] = b;
+  u32 b = cpu->m_inst & 0xFF;
+  cpu->m_reg[(cpu->m_inst >> 8) & 0x7] = b;
   cpu->SetNZ(0, !b);
   cpu->AddCycles_C();
 }
 
-void T_CMP_IMM(ARM* cpu)
+void ARMInterpreter::T_CMP_IMM(ARMv5* cpu)
 {
-  u32 a = cpu->R[(cpu->CurInstr >> 8) & 0x7];
-  u32 b = cpu->CurInstr & 0xFF;
+  u32 a = cpu->m_reg[(cpu->m_inst >> 8) & 0x7];
+  u32 b = cpu->m_inst & 0xFF;
   u32 res = a - b;
   cpu->SetNZCV(res & 0x80000000, !res, CarrySub(a, b), OverflowSub(a, b));
   cpu->AddCycles_C();
 }
 
-void T_ADD_IMM(ARM* cpu)
+void ARMInterpreter::T_ADD_IMM(ARMv5* cpu)
 {
-  u32 a = cpu->R[(cpu->CurInstr >> 8) & 0x7];
-  u32 b = cpu->CurInstr & 0xFF;
+  u32 a = cpu->m_reg[(cpu->m_inst >> 8) & 0x7];
+  u32 b = cpu->m_inst & 0xFF;
   u32 res = a + b;
-  cpu->R[(cpu->CurInstr >> 8) & 0x7] = res;
+  cpu->m_reg[(cpu->m_inst >> 8) & 0x7] = res;
   cpu->SetNZCV(res & 0x80000000, !res, CarryAdd(a, b), OverflowAdd(a, b));
   cpu->AddCycles_C();
 }
 
-void T_SUB_IMM(ARM* cpu)
+void ARMInterpreter::T_SUB_IMM(ARMv5* cpu)
 {
-  u32 a = cpu->R[(cpu->CurInstr >> 8) & 0x7];
-  u32 b = cpu->CurInstr & 0xFF;
+  u32 a = cpu->m_reg[(cpu->m_inst >> 8) & 0x7];
+  u32 b = cpu->m_inst & 0xFF;
   u32 res = a - b;
-  cpu->R[(cpu->CurInstr >> 8) & 0x7] = res;
+  cpu->m_reg[(cpu->m_inst >> 8) & 0x7] = res;
   cpu->SetNZCV(res & 0x80000000, !res, CarrySub(a, b), OverflowSub(a, b));
   cpu->AddCycles_C();
 }
 
-void T_AND_REG(ARM* cpu)
+void ARMInterpreter::T_AND_REG(ARMv5* cpu)
 {
-  u32 a = cpu->R[cpu->CurInstr & 0x7];
-  u32 b = cpu->R[(cpu->CurInstr >> 3) & 0x7];
+  u32 a = cpu->m_reg[cpu->m_inst & 0x7];
+  u32 b = cpu->m_reg[(cpu->m_inst >> 3) & 0x7];
   u32 res = a & b;
-  cpu->R[cpu->CurInstr & 0x7] = res;
+  cpu->m_reg[cpu->m_inst & 0x7] = res;
   cpu->SetNZ(res & 0x80000000, !res);
   cpu->AddCycles_C();
 }
 
-void T_EOR_REG(ARM* cpu)
+void ARMInterpreter::T_EOR_REG(ARMv5* cpu)
 {
-  u32 a = cpu->R[cpu->CurInstr & 0x7];
-  u32 b = cpu->R[(cpu->CurInstr >> 3) & 0x7];
+  u32 a = cpu->m_reg[cpu->m_inst & 0x7];
+  u32 b = cpu->m_reg[(cpu->m_inst >> 3) & 0x7];
   u32 res = a ^ b;
-  cpu->R[cpu->CurInstr & 0x7] = res;
+  cpu->m_reg[cpu->m_inst & 0x7] = res;
   cpu->SetNZ(res & 0x80000000, !res);
   cpu->AddCycles_C();
 }
 
-void T_LSL_REG(ARM* cpu)
+void ARMInterpreter::T_LSL_REG(ARMv5* cpu)
 {
-  u32 a = cpu->R[cpu->CurInstr & 0x7];
-  u32 b = cpu->R[(cpu->CurInstr >> 3) & 0x7] & 0xFF;
+  u32 a = cpu->m_reg[cpu->m_inst & 0x7];
+  u32 b = cpu->m_reg[(cpu->m_inst >> 3) & 0x7] & 0xFF;
   LSL_REG_S(a, b);
-  cpu->R[cpu->CurInstr & 0x7] = a;
+  cpu->m_reg[cpu->m_inst & 0x7] = a;
   cpu->SetNZ(a & 0x80000000, !a);
   cpu->AddCycles_CI(1);
 }
 
-void T_LSR_REG(ARM* cpu)
+void ARMInterpreter::T_LSR_REG(ARMv5* cpu)
 {
-  u32 a = cpu->R[cpu->CurInstr & 0x7];
-  u32 b = cpu->R[(cpu->CurInstr >> 3) & 0x7] & 0xFF;
+  u32 a = cpu->m_reg[cpu->m_inst & 0x7];
+  u32 b = cpu->m_reg[(cpu->m_inst >> 3) & 0x7] & 0xFF;
   LSR_REG_S(a, b);
-  cpu->R[cpu->CurInstr & 0x7] = a;
+  cpu->m_reg[cpu->m_inst & 0x7] = a;
   cpu->SetNZ(a & 0x80000000, !a);
   cpu->AddCycles_CI(1);
 }
 
-void T_ASR_REG(ARM* cpu)
+void ARMInterpreter::T_ASR_REG(ARMv5* cpu)
 {
-  u32 a = cpu->R[cpu->CurInstr & 0x7];
-  u32 b = cpu->R[(cpu->CurInstr >> 3) & 0x7] & 0xFF;
+  u32 a = cpu->m_reg[cpu->m_inst & 0x7];
+  u32 b = cpu->m_reg[(cpu->m_inst >> 3) & 0x7] & 0xFF;
   ASR_REG_S(a, b);
-  cpu->R[cpu->CurInstr & 0x7] = a;
+  cpu->m_reg[cpu->m_inst & 0x7] = a;
   cpu->SetNZ(a & 0x80000000, !a);
   cpu->AddCycles_CI(1);
 }
 
-void T_ADC_REG(ARM* cpu)
+void ARMInterpreter::T_ADC_REG(ARMv5* cpu)
 {
-  u32 a = cpu->R[cpu->CurInstr & 0x7];
-  u32 b = cpu->R[(cpu->CurInstr >> 3) & 0x7];
+  u32 a = cpu->m_reg[cpu->m_inst & 0x7];
+  u32 b = cpu->m_reg[(cpu->m_inst >> 3) & 0x7];
   u32 res_tmp = a + b;
-  u32 carry = (cpu->CPSR & 0x20000000 ? 1 : 0);
+  u32 carry = (cpu->m_reg_cpsr & 0x20000000 ? 1 : 0);
   u32 res = res_tmp + carry;
-  cpu->R[cpu->CurInstr & 0x7] = res;
+  cpu->m_reg[cpu->m_inst & 0x7] = res;
   cpu->SetNZCV(res & 0x80000000, !res, CarryAdd(a, b) || CarryAdd(res_tmp, carry),
                OverflowAdc(a, b, carry));
   cpu->AddCycles_C();
 }
 
-void T_SBC_REG(ARM* cpu)
+void ARMInterpreter::T_SBC_REG(ARMv5* cpu)
 {
-  u32 a = cpu->R[cpu->CurInstr & 0x7];
-  u32 b = cpu->R[(cpu->CurInstr >> 3) & 0x7];
+  u32 a = cpu->m_reg[cpu->m_inst & 0x7];
+  u32 b = cpu->m_reg[(cpu->m_inst >> 3) & 0x7];
   u32 res_tmp = a - b;
-  u32 carry = (cpu->CPSR & 0x20000000 ? 0 : 1);
+  u32 carry = (cpu->m_reg_cpsr & 0x20000000 ? 0 : 1);
   u32 res = res_tmp - carry;
-  cpu->R[cpu->CurInstr & 0x7] = res;
+  cpu->m_reg[cpu->m_inst & 0x7] = res;
   cpu->SetNZCV(res & 0x80000000, !res, CarrySub(a, b) && CarrySub(res_tmp, carry),
                OverflowSbc(a, b, carry));
   cpu->AddCycles_C();
 }
 
-void T_ROR_REG(ARM* cpu)
+void ARMInterpreter::T_ROR_REG(ARMv5* cpu)
 {
-  u32 a = cpu->R[cpu->CurInstr & 0x7];
-  u32 b = cpu->R[(cpu->CurInstr >> 3) & 0x7] & 0xFF;
+  u32 a = cpu->m_reg[cpu->m_inst & 0x7];
+  u32 b = cpu->m_reg[(cpu->m_inst >> 3) & 0x7] & 0xFF;
   ROR_REG_S(a, b);
-  cpu->R[cpu->CurInstr & 0x7] = a;
+  cpu->m_reg[cpu->m_inst & 0x7] = a;
   cpu->SetNZ(a & 0x80000000, !a);
   cpu->AddCycles_CI(1);
 }
 
-void T_TST_REG(ARM* cpu)
+void ARMInterpreter::T_TST_REG(ARMv5* cpu)
 {
-  u32 a = cpu->R[cpu->CurInstr & 0x7];
-  u32 b = cpu->R[(cpu->CurInstr >> 3) & 0x7];
+  u32 a = cpu->m_reg[cpu->m_inst & 0x7];
+  u32 b = cpu->m_reg[(cpu->m_inst >> 3) & 0x7];
   u32 res = a & b;
   cpu->SetNZ(res & 0x80000000, !res);
   cpu->AddCycles_C();
 }
 
-void T_NEG_REG(ARM* cpu)
+void ARMInterpreter::T_NEG_REG(ARMv5* cpu)
 {
-  u32 b = cpu->R[(cpu->CurInstr >> 3) & 0x7];
+  u32 b = cpu->m_reg[(cpu->m_inst >> 3) & 0x7];
   u32 res = -b;
-  cpu->R[cpu->CurInstr & 0x7] = res;
+  cpu->m_reg[cpu->m_inst & 0x7] = res;
   cpu->SetNZCV(res & 0x80000000, !res, CarrySub(0, b), OverflowSub(0, b));
   cpu->AddCycles_C();
 }
 
-void T_CMP_REG(ARM* cpu)
+void ARMInterpreter::T_CMP_REG(ARMv5* cpu)
 {
-  u32 a = cpu->R[cpu->CurInstr & 0x7];
-  u32 b = cpu->R[(cpu->CurInstr >> 3) & 0x7];
+  u32 a = cpu->m_reg[cpu->m_inst & 0x7];
+  u32 b = cpu->m_reg[(cpu->m_inst >> 3) & 0x7];
   u32 res = a - b;
   cpu->SetNZCV(res & 0x80000000, !res, CarrySub(a, b), OverflowSub(a, b));
   cpu->AddCycles_C();
 }
 
-void T_CMN_REG(ARM* cpu)
+void ARMInterpreter::T_CMN_REG(ARMv5* cpu)
 {
-  u32 a = cpu->R[cpu->CurInstr & 0x7];
-  u32 b = cpu->R[(cpu->CurInstr >> 3) & 0x7];
+  u32 a = cpu->m_reg[cpu->m_inst & 0x7];
+  u32 b = cpu->m_reg[(cpu->m_inst >> 3) & 0x7];
   u32 res = a + b;
   cpu->SetNZCV(res & 0x80000000, !res, CarryAdd(a, b), OverflowAdd(a, b));
   cpu->AddCycles_C();
 }
 
-void T_ORR_REG(ARM* cpu)
+void ARMInterpreter::T_ORR_REG(ARMv5* cpu)
 {
-  u32 a = cpu->R[cpu->CurInstr & 0x7];
-  u32 b = cpu->R[(cpu->CurInstr >> 3) & 0x7];
+  u32 a = cpu->m_reg[cpu->m_inst & 0x7];
+  u32 b = cpu->m_reg[(cpu->m_inst >> 3) & 0x7];
   u32 res = a | b;
-  cpu->R[cpu->CurInstr & 0x7] = res;
+  cpu->m_reg[cpu->m_inst & 0x7] = res;
   cpu->SetNZ(res & 0x80000000, !res);
   cpu->AddCycles_C();
 }
 
-void T_MUL_REG(ARM* cpu)
+void ARMInterpreter::T_MUL_REG(ARMv5* cpu)
 {
-  u32 a = cpu->R[cpu->CurInstr & 0x7];
-  u32 b = cpu->R[(cpu->CurInstr >> 3) & 0x7];
+  u32 a = cpu->m_reg[cpu->m_inst & 0x7];
+  u32 b = cpu->m_reg[(cpu->m_inst >> 3) & 0x7];
   u32 res = a * b;
-  cpu->R[cpu->CurInstr & 0x7] = res;
+  cpu->m_reg[cpu->m_inst & 0x7] = res;
   cpu->SetNZ(res & 0x80000000, !res);
 
   s32 cycles = 0;
@@ -1522,21 +1523,21 @@ void T_MUL_REG(ARM* cpu)
   cpu->AddCycles_CI(cycles);
 }
 
-void T_BIC_REG(ARM* cpu)
+void ARMInterpreter::T_BIC_REG(ARMv5* cpu)
 {
-  u32 a = cpu->R[cpu->CurInstr & 0x7];
-  u32 b = cpu->R[(cpu->CurInstr >> 3) & 0x7];
+  u32 a = cpu->m_reg[cpu->m_inst & 0x7];
+  u32 b = cpu->m_reg[(cpu->m_inst >> 3) & 0x7];
   u32 res = a & ~b;
-  cpu->R[cpu->CurInstr & 0x7] = res;
+  cpu->m_reg[cpu->m_inst & 0x7] = res;
   cpu->SetNZ(res & 0x80000000, !res);
   cpu->AddCycles_C();
 }
 
-void T_MVN_REG(ARM* cpu)
+void ARMInterpreter::T_MVN_REG(ARMv5* cpu)
 {
-  u32 b = cpu->R[(cpu->CurInstr >> 3) & 0x7];
+  u32 b = cpu->m_reg[(cpu->m_inst >> 3) & 0x7];
   u32 res = ~b;
-  cpu->R[cpu->CurInstr & 0x7] = res;
+  cpu->m_reg[cpu->m_inst & 0x7] = res;
   cpu->SetNZ(res & 0x80000000, !res);
   cpu->AddCycles_C();
 }
@@ -1544,13 +1545,13 @@ void T_MVN_REG(ARM* cpu)
 // TODO: check those when MSBs and MSBd are cleared
 // GBAtek says it's not allowed, but it works atleast on the ARM9
 
-void T_ADD_HIREG(ARM* cpu)
+void ARMInterpreter::T_ADD_HIREG(ARMv5* cpu)
 {
-  u32 rd = (cpu->CurInstr & 0x7) | ((cpu->CurInstr >> 4) & 0x8);
-  u32 rs = (cpu->CurInstr >> 3) & 0xF;
+  u32 rd = (cpu->m_inst & 0x7) | ((cpu->m_inst >> 4) & 0x8);
+  u32 rs = (cpu->m_inst >> 3) & 0xF;
 
-  u32 a = cpu->R[rd];
-  u32 b = cpu->R[rs];
+  u32 a = cpu->m_reg[rd];
+  u32 b = cpu->m_reg[rs];
 
   cpu->AddCycles_C();
 
@@ -1560,79 +1561,79 @@ void T_ADD_HIREG(ARM* cpu)
   }
   else
   {
-    cpu->R[rd] = a + b;
+    cpu->m_reg[rd] = a + b;
   }
 }
 
-void T_CMP_HIREG(ARM* cpu)
+void ARMInterpreter::T_CMP_HIREG(ARMv5* cpu)
 {
-  u32 rd = (cpu->CurInstr & 0x7) | ((cpu->CurInstr >> 4) & 0x8);
-  u32 rs = (cpu->CurInstr >> 3) & 0xF;
+  u32 rd = (cpu->m_inst & 0x7) | ((cpu->m_inst >> 4) & 0x8);
+  u32 rs = (cpu->m_inst >> 3) & 0xF;
 
-  u32 a = cpu->R[rd];
-  u32 b = cpu->R[rs];
+  u32 a = cpu->m_reg[rd];
+  u32 b = cpu->m_reg[rs];
   u32 res = a - b;
 
   cpu->SetNZCV(res & 0x80000000, !res, CarrySub(a, b), OverflowSub(a, b));
   cpu->AddCycles_C();
 }
 
-void T_MOV_HIREG(ARM* cpu)
+void ARMInterpreter::T_MOV_HIREG(ARMv5* cpu)
 {
-  u32 rd = (cpu->CurInstr & 0x7) | ((cpu->CurInstr >> 4) & 0x8);
-  u32 rs = (cpu->CurInstr >> 3) & 0xF;
+  u32 rd = (cpu->m_inst & 0x7) | ((cpu->m_inst >> 4) & 0x8);
+  u32 rs = (cpu->m_inst >> 3) & 0xF;
 
   cpu->AddCycles_C();
 
   if (rd == 15)
   {
-    cpu->JumpTo(cpu->R[rs] | 1);
+    cpu->JumpTo(cpu->m_reg[rs] | 1);
   }
   else
   {
-    cpu->R[rd] = cpu->R[rs];
+    cpu->m_reg[rd] = cpu->m_reg[rs];
   }
 
 #if 0
   // nocash-style debugging hook
-  if ((cpu->CurInstr & 0xFFFF) == 0x46E4 &&      // mov r12, r12
-      (cpu->NextInstr[0] & 0xF800) == 0xE000 &&  // branch
-      (cpu->NextInstr[1] & 0xFFFF) == 0x6464)
+  if ((cpu->m_inst & 0xFFFF) == 0x46E4 &&      // mov r12, r12
+      (cpu->m_next_inst[0] & 0xF800) == 0xE000 &&  // branch
+      (cpu->m_next_inst[1] & 0xFFFF) == 0x6464)
   {
     // GBATek says the two bytes after the 2nd ID are _reserved_ for flags
     // but since they serve no purpose ATTOW, we can skip them
-    u32 addr = cpu->R[15] + 4;  // Skip 2nd ID and flags
+    u32 addr = cpu->m_reg[15] + 4;  // Skip 2nd ID and flags
     // TODO: Pass flags to NocashPrint
     cpu->NDS.NocashPrint(cpu->Num, addr);
   }
 #endif
 }
 
-void T_ADD_PCREL(ARM* cpu)
+void ARMInterpreter::T_ADD_PCREL(ARMv5* cpu)
 {
-  u32 val = cpu->R[15] & ~2;
-  val += ((cpu->CurInstr & 0xFF) << 2);
-  cpu->R[(cpu->CurInstr >> 8) & 0x7] = val;
+  u32 val = cpu->m_reg[15] & ~2;
+  val += ((cpu->m_inst & 0xFF) << 2);
+  cpu->m_reg[(cpu->m_inst >> 8) & 0x7] = val;
   cpu->AddCycles_C();
 }
 
-void T_ADD_SPREL(ARM* cpu)
+void ARMInterpreter::T_ADD_SPREL(ARMv5* cpu)
 {
-  u32 val = cpu->R[13];
-  val += ((cpu->CurInstr & 0xFF) << 2);
-  cpu->R[(cpu->CurInstr >> 8) & 0x7] = val;
+  u32 val = cpu->m_reg[13];
+  val += ((cpu->m_inst & 0xFF) << 2);
+  cpu->m_reg[(cpu->m_inst >> 8) & 0x7] = val;
   cpu->AddCycles_C();
 }
 
-void T_ADD_SP(ARM* cpu)
+void ARMInterpreter::T_ADD_SP(ARMv5* cpu)
 {
-  u32 val = cpu->R[13];
-  if (cpu->CurInstr & (1 << 7))
-    val -= ((cpu->CurInstr & 0x7F) << 2);
+  u32 val = cpu->m_reg[13];
+  if (cpu->m_inst & (1 << 7))
+    val -= ((cpu->m_inst & 0x7F) << 2);
   else
-    val += ((cpu->CurInstr & 0x7F) << 2);
-  cpu->R[13] = val;
+    val += ((cpu->m_inst & 0x7F) << 2);
+  cpu->m_reg[13] = val;
   cpu->AddCycles_C();
 }
 
-}  // namespace IOS::LLE::ARMInterpreter
+}  // namespace IOS::LLE

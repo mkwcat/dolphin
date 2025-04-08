@@ -23,7 +23,7 @@
 #include "ARMInterpreter.h"
 #include "Common/ChunkFile.h"
 #include "Common/Logging/Log.h"
-#include "Common/Thread.h"
+#include "Common/MsgHandler.h"
 #include "Core/HW/CPU.h"
 #include "Core/HW/MMIO.h"
 #include "Core/HW/Memmap.h"
@@ -37,7 +37,7 @@ namespace IOS::LLE
 {
 
 #ifdef GDBSTUB_ENABLED
-void ARM::GdbCheckA()
+void ARMv5::GdbCheckA()
 {
   if (!IsSingleStep && !BreakReq)
   {  // check if eg. break signal is incoming etc.
@@ -47,7 +47,7 @@ void ARM::GdbCheckA()
     BreakReq = st == Gdb::StubState::Attach || st == Gdb::StubState::Break;
   }
 }
-void ARM::GdbCheckB()
+void ARMv5::GdbCheckB()
 {
   if (IsSingleStep || BreakReq)
   {  // use else here or we single-step the same insn twice in gdb
@@ -57,7 +57,7 @@ void ARM::GdbCheckB()
     BreakReq = st == Gdb::StubState::Attach || st == Gdb::StubState::Break;
   }
 }
-void ARM::GdbCheckC()
+void ARMv5::GdbCheckC()
 {
   u32 pc_real = R[15] - ((CPSR & 0x20) ? 2 : 4);
   Gdb::StubState st = GdbStub.CheckBkpt(pc_real, true, true);
@@ -70,13 +70,13 @@ void ARM::GdbCheckC()
     GdbCheckB();
 }
 #else
-void ARM::GdbCheckA()
+void ARMv5::GdbCheckA()
 {
 }
-void ARM::GdbCheckB()
+void ARMv5::GdbCheckB()
 {
 }
-void ARM::GdbCheckC()
+void ARMv5::GdbCheckC()
 {
 }
 #endif
@@ -93,7 +93,7 @@ void ARM::GdbCheckC()
 //
 // MUL/MLA seems to take 1I on ARM9
 
-const u32 ARM::ConditionTable[16] = {
+const u32 ARMv5::ConditionTable[16] = {
     0xF0F0,  // EQ
     0x0F0F,  // NE
     0xCCCC,  // CS
@@ -112,30 +112,22 @@ const u32 ARM::ConditionTable[16] = {
     0x0000   // NE
 };
 
-ARM::ARM(u32 num, bool jit, std::optional<GDBArgs> gdb)
+ARMv5::ARMv5(Core::System& system, Memory::MemoryManager& memory, std::optional<GDBArgs> gdb,
+             bool jit)
+    : m_system(system), m_memory(memory)
 #ifdef GDBSTUB_ENABLED
-    : GdbStub(this), BreakOnStartup(false),
+      ,
+      GdbStub(this), BreakOnStartup(false),
 #endif
 {
   SetGdbArgs(jit ? std::nullopt : gdb);
-}
-
-ARM::~ARM()
-{
-  // dorp
-}
-
-ARMv5::ARMv5(Core::System& system, Memory::MemoryManager& memory, std::optional<GDBArgs> gdb,
-             bool jit)
-    : ARM(0, jit, gdb), m_system(system), m_memory(memory)
-{
 }
 
 ARMv5::~ARMv5()
 {
 }
 
-void ARM::SetGdbArgs(std::optional<GDBArgs> gdb)
+void ARMv5::SetGdbArgs(std::optional<GDBArgs> gdb)
 {
 #ifdef GDBSTUB_ENABLED
   GdbStub.Close();
@@ -151,33 +143,33 @@ void ARM::SetGdbArgs(std::optional<GDBArgs> gdb)
 
 void ARMv5::Reset()
 {
-  Cycles = 0;
-  Halted = 0;
+  m_cycles = 0;
+  m_is_halted = 0;
 
-  IRQ = 0;
+  m_is_irq = 0;
 
   for (int i = 0; i < 16; i++)
-    R[i] = 0;
+    m_reg[i] = 0;
 
-  CPSR = 0x000000D3;
+  m_reg_cpsr = 0x000000D3;
 
   for (int i = 0; i < 7; i++)
-    R_FIQ[i] = 0;
+    m_fiq_reg[i] = 0;
   for (int i = 0; i < 2; i++)
   {
-    R_SVC[i] = 0;
-    R_ABT[i] = 0;
-    R_IRQ[i] = 0;
-    R_UND[i] = 0;
+    m_svc_reg[i] = 0;
+    m_abt_reg[i] = 0;
+    m_irq_reg[i] = 0;
+    m_und_reg[i] = 0;
   }
 
-  R_FIQ[7] = 0x00000010;
-  R_SVC[2] = 0x00000010;
-  R_ABT[2] = 0x00000010;
-  R_IRQ[2] = 0x00000010;
-  R_UND[2] = 0x00000010;
+  m_fiq_reg[7] = 0x00000010;
+  m_svc_reg[2] = 0x00000010;
+  m_abt_reg[2] = 0x00000010;
+  m_irq_reg[2] = 0x00000010;
+  m_und_reg[2] = 0x00000010;
 
-  ExceptionBase = 0xFFFF0000;
+  m_exception_base = 0xFFFF0000;
 
   CP15Reset();
 
@@ -195,12 +187,12 @@ void ARMv5::Reset()
 #endif
 
   // zorp
-  JumpTo(ExceptionBase);
+  JumpTo(m_exception_base);
 }
 
 #if 0
 
-void ARM::DoSavestate(Savestate* file)
+void ARMv5::DoSavestate(Savestate* file)
 {
     file->Section((char*)(Num ? "ARM7" : "ARM9"));
 
@@ -219,7 +211,7 @@ void ARM::DoSavestate(Savestate* file)
     file->VarArray(R_ABT, 3*sizeof(u32));
     file->VarArray(R_IRQ, 3*sizeof(u32));
     file->VarArray(R_UND, 3*sizeof(u32));
-    file->Var32(&CurInstr);
+    file->Var32(&m_inst);
 #ifdef JIT_ENABLED
     if (file->Saving && NDS.IsJITEnabled())
     {
@@ -229,7 +221,7 @@ void ARM::DoSavestate(Savestate* file)
         FillPipeline();
     }
 #endif
-    file->VarArray(NextInstr, 2*sizeof(u32));
+    file->VarArray(m_next_inst, 2*sizeof(u32));
 
     file->Var32(&ExceptionBase);
 
@@ -257,7 +249,7 @@ void ARM::DoSavestate(Savestate* file)
 
 void ARMv5::DoSavestate(Savestate* file)
 {
-    ARM::DoSavestate(file);
+    ARMv5::DoSavestate(file);
     CP15DoSavestate(file);
 }
 
@@ -269,7 +261,7 @@ void ARMv5::JumpTo(u32 addr, bool restorecpsr)
   {
     RestoreCPSR();
 
-    if (CPSR & 0x20)
+    if (m_reg_cpsr & 0x20)
       addr |= 0x1;
     else
       addr &= ~0x1;
@@ -287,7 +279,7 @@ void ARMv5::JumpTo(u32 addr, bool restorecpsr)
   if (addr & 0x1)
   {
     addr &= ~0x1;
-    R[15] = addr + 2;
+    m_reg[15] = addr + 2;
 
     // if (newregion != oldregion)
     //   SetupCodeMem(addr);
@@ -296,35 +288,35 @@ void ARMv5::JumpTo(u32 addr, bool restorecpsr)
     // doesn't matter if we put garbage in the MSbs there
     if (addr & 0x2)
     {
-      NextInstr[0] = CodeRead32(addr - 2, true);
-      Cycles += CodeCycles;
-      NextInstr[1] = CodeRead32(addr + 2, false);
-      Cycles += CodeCycles;
+      m_next_inst[0] = CodeRead32(addr - 2, true);
+      m_cycles += m_code_cycles;
+      m_next_inst[1] = CodeRead32(addr + 2, false);
+      m_cycles += m_code_cycles;
     }
     else
     {
       u32 instr = CodeRead32(addr, true);
-      NextInstr[0] = instr >> 16;
-      NextInstr[1] = instr << 16;
-      Cycles += CodeCycles;
+      m_next_inst[0] = instr >> 16;
+      m_next_inst[1] = instr << 16;
+      m_cycles += m_code_cycles;
     }
 
-    CPSR |= 0x20;
+    m_reg_cpsr |= 0x20;
   }
   else
   {
     addr &= ~0x3;
-    R[15] = addr + 4;
+    m_reg[15] = addr + 4;
 
     // if (newregion != oldregion)
     //   SetupCodeMem(addr);
 
-    NextInstr[0] = CodeRead32(addr, true);
-    Cycles += CodeCycles;
-    NextInstr[1] = CodeRead32(addr + 4, false);
-    Cycles += CodeCycles;
+    m_next_inst[0] = CodeRead32(addr, true);
+    m_cycles += m_code_cycles;
+    m_next_inst[1] = CodeRead32(addr + 4, false);
+    m_cycles += m_code_cycles;
 
-    CPSR &= ~0x20;
+    m_reg_cpsr &= ~0x20;
   }
 
   u32 addrCopy = addr;
@@ -336,50 +328,50 @@ void ARMv5::JumpTo(u32 addr, bool restorecpsr)
   }
 }
 
-void ARM::RestoreCPSR()
+void ARMv5::RestoreCPSR()
 {
-  u32 oldcpsr = CPSR;
+  u32 oldcpsr = m_reg_cpsr;
 
-  switch (CPSR & 0x1F)
+  switch (m_reg_cpsr & 0x1F)
   {
   case 0x11:
-    CPSR = R_FIQ[7];
+    m_reg_cpsr = m_fiq_reg[7];
     break;
 
   case 0x12:
-    CPSR = R_IRQ[2];
+    m_reg_cpsr = m_irq_reg[2];
     break;
 
   case 0x13:
-    CPSR = R_SVC[2];
+    m_reg_cpsr = m_svc_reg[2];
     break;
 
   case 0x14:
   case 0x15:
   case 0x16:
   case 0x17:
-    CPSR = R_ABT[2];
+    m_reg_cpsr = m_abt_reg[2];
     break;
 
   case 0x18:
   case 0x19:
   case 0x1A:
   case 0x1B:
-    CPSR = R_UND[2];
+    m_reg_cpsr = m_und_reg[2];
     break;
 
   default:
-    WARN_LOG_FMT(IOS_LLE, "!! attempt to restore CPSR under bad mode {:02x}, {:08x}\n", CPSR & 0x1F,
-                 R[15]);
+    WARN_LOG_FMT(IOS_LLE, "!! attempt to restore CPSR under bad mode {:02x}, {:08x}\n",
+                 m_reg_cpsr & 0x1F, m_reg[15]);
     break;
   }
 
-  CPSR |= 0x00000010;
+  m_reg_cpsr |= 0x00000010;
 
-  UpdateMode(oldcpsr, CPSR);
+  UpdateMode(oldcpsr, m_reg_cpsr);
 }
 
-void ARM::UpdateMode(u32 oldmode, u32 newmode, bool phony)
+void ARMv5::UpdateMode(u32 oldmode, u32 newmode, bool phony)
 {
   if ((oldmode & 0x1F) == (newmode & 0x1F))
     return;
@@ -387,134 +379,134 @@ void ARM::UpdateMode(u32 oldmode, u32 newmode, bool phony)
   switch (oldmode & 0x1F)
   {
   case 0x11:
-    std::swap(R[8], R_FIQ[0]);
-    std::swap(R[9], R_FIQ[1]);
-    std::swap(R[10], R_FIQ[2]);
-    std::swap(R[11], R_FIQ[3]);
-    std::swap(R[12], R_FIQ[4]);
-    std::swap(R[13], R_FIQ[5]);
-    std::swap(R[14], R_FIQ[6]);
+    std::swap(m_reg[8], m_fiq_reg[0]);
+    std::swap(m_reg[9], m_fiq_reg[1]);
+    std::swap(m_reg[10], m_fiq_reg[2]);
+    std::swap(m_reg[11], m_fiq_reg[3]);
+    std::swap(m_reg[12], m_fiq_reg[4]);
+    std::swap(m_reg[13], m_fiq_reg[5]);
+    std::swap(m_reg[14], m_fiq_reg[6]);
     break;
 
   case 0x12:
-    std::swap(R[13], R_IRQ[0]);
-    std::swap(R[14], R_IRQ[1]);
+    std::swap(m_reg[13], m_irq_reg[0]);
+    std::swap(m_reg[14], m_irq_reg[1]);
     break;
 
   case 0x13:
-    std::swap(R[13], R_SVC[0]);
-    std::swap(R[14], R_SVC[1]);
+    std::swap(m_reg[13], m_svc_reg[0]);
+    std::swap(m_reg[14], m_svc_reg[1]);
     break;
 
   case 0x17:
-    std::swap(R[13], R_ABT[0]);
-    std::swap(R[14], R_ABT[1]);
+    std::swap(m_reg[13], m_abt_reg[0]);
+    std::swap(m_reg[14], m_abt_reg[1]);
     break;
 
   case 0x1B:
-    std::swap(R[13], R_UND[0]);
-    std::swap(R[14], R_UND[1]);
+    std::swap(m_reg[13], m_und_reg[0]);
+    std::swap(m_reg[14], m_und_reg[1]);
     break;
   }
 
   switch (newmode & 0x1F)
   {
   case 0x11:
-    std::swap(R[8], R_FIQ[0]);
-    std::swap(R[9], R_FIQ[1]);
-    std::swap(R[10], R_FIQ[2]);
-    std::swap(R[11], R_FIQ[3]);
-    std::swap(R[12], R_FIQ[4]);
-    std::swap(R[13], R_FIQ[5]);
-    std::swap(R[14], R_FIQ[6]);
+    std::swap(m_reg[8], m_fiq_reg[0]);
+    std::swap(m_reg[9], m_fiq_reg[1]);
+    std::swap(m_reg[10], m_fiq_reg[2]);
+    std::swap(m_reg[11], m_fiq_reg[3]);
+    std::swap(m_reg[12], m_fiq_reg[4]);
+    std::swap(m_reg[13], m_fiq_reg[5]);
+    std::swap(m_reg[14], m_fiq_reg[6]);
     break;
 
   case 0x12:
-    std::swap(R[13], R_IRQ[0]);
-    std::swap(R[14], R_IRQ[1]);
+    std::swap(m_reg[13], m_irq_reg[0]);
+    std::swap(m_reg[14], m_irq_reg[1]);
     break;
 
   case 0x13:
-    std::swap(R[13], R_SVC[0]);
-    std::swap(R[14], R_SVC[1]);
+    std::swap(m_reg[13], m_svc_reg[0]);
+    std::swap(m_reg[14], m_svc_reg[1]);
     break;
 
   case 0x17:
-    std::swap(R[13], R_ABT[0]);
-    std::swap(R[14], R_ABT[1]);
+    std::swap(m_reg[13], m_abt_reg[0]);
+    std::swap(m_reg[14], m_abt_reg[1]);
     break;
 
   case 0x1B:
-    std::swap(R[13], R_UND[0]);
-    std::swap(R[14], R_UND[1]);
+    std::swap(m_reg[13], m_und_reg[0]);
+    std::swap(m_reg[14], m_und_reg[1]);
     break;
   }
 }
 
-void ARM::TriggerIRQ()
+void ARMv5::TriggerIRQ()
 {
-  if (CPSR & 0x80)
+  if (m_reg_cpsr & 0x80)
     return;
 
-  u32 oldcpsr = CPSR;
-  CPSR &= ~0xFF;
-  CPSR |= 0xD2;
-  UpdateMode(oldcpsr, CPSR);
+  u32 oldcpsr = m_reg_cpsr;
+  m_reg_cpsr &= ~0xFF;
+  m_reg_cpsr |= 0xD2;
+  UpdateMode(oldcpsr, m_reg_cpsr);
 
-  R_IRQ[2] = oldcpsr;
-  R[14] = R[15] + (oldcpsr & 0x20 ? 2 : 0);
-  JumpTo(ExceptionBase + 0x18);
+  m_irq_reg[2] = oldcpsr;
+  m_reg[14] = m_reg[15] + (oldcpsr & 0x20 ? 2 : 0);
+  JumpTo(m_exception_base + 0x18);
 }
 
 void ARMv5::PrefetchAbort()
 {
-  WARN_LOG_FMT(IOS_LLE, "ARM9: prefetch abort ({:08x})\n", R[15]);
+  WARN_LOG_FMT(IOS_LLE, "ARM9: Prefetch abort ({:08x})\n", m_reg[15]);
 
-  u32 oldcpsr = CPSR;
-  CPSR &= ~0xBF;
-  CPSR |= 0x97;
-  UpdateMode(oldcpsr, CPSR);
+  u32 oldcpsr = m_reg_cpsr;
+  m_reg_cpsr &= ~0xBF;
+  m_reg_cpsr |= 0x97;
+  UpdateMode(oldcpsr, m_reg_cpsr);
 
   // this shouldn't happen, but if it does, we're stuck in some nasty endless loop
   // so better take care of it
-  u32 exceptionBaseCopy = ExceptionBase + 0x0C;
-  if (!TranslateAddress(exceptionBaseCopy, false))
+  u32 exception_base_copy = m_exception_base + 0x0C;
+  if (!TranslateAddress(exception_base_copy, false))
   {
-    ERROR_LOG_FMT(IOS_LLE, "!!!!! EXCEPTION REGION NOT EXECUTABLE. THIS IS VERY BAD!!\n");
+    PanicAlertFmt("!!!!! ARM9 EXCEPTION REGION NOT EXECUTABLE. THIS IS VERY BAD!!\n");
     // NDS.Stop(Platform::StopReason::BadExceptionRegion);
     return;
   }
 
-  R_ABT[2] = oldcpsr;
-  R[14] = R[15] + (oldcpsr & 0x20 ? 2 : 0);
-  JumpTo(ExceptionBase + 0x0C);
+  m_abt_reg[2] = oldcpsr;
+  m_reg[14] = m_reg[15] + (oldcpsr & 0x20 ? 2 : 0);
+  JumpTo(m_exception_base + 0x0C);
 }
 
 void ARMv5::DataAbort()
 {
-  WARN_LOG_FMT(IOS_LLE, "ARM9: data abort ({:08x})\n", R[15]);
+  WARN_LOG_FMT(IOS_LLE, "ARM9: Data abort ({:08x})\n", m_reg[15]);
 
-  u32 oldcpsr = CPSR;
-  CPSR &= ~0xBF;
-  CPSR |= 0x97;
-  UpdateMode(oldcpsr, CPSR);
+  u32 oldcpsr = m_reg_cpsr;
+  m_reg_cpsr &= ~0xBF;
+  m_reg_cpsr |= 0x97;
+  UpdateMode(oldcpsr, m_reg_cpsr);
 
-  R_ABT[2] = oldcpsr;
-  R[14] = R[15] + (oldcpsr & 0x20 ? 4 : 0);
-  JumpTo(ExceptionBase + 0x10);
+  m_abt_reg[2] = oldcpsr;
+  m_reg[14] = m_reg[15] + (oldcpsr & 0x20 ? 4 : 0);
+  JumpTo(m_exception_base + 0x10);
 }
 
-void ARM::CheckGdbIncoming()
+void ARMv5::CheckGdbIncoming()
 {
   GdbCheckA();
 }
 
 u32 ARMv5::GetPC()
 {
-  if (CPSR & 0x20)
-    return (R[15] - 2) + 1;
+  if (m_reg_cpsr & 0x20)
+    return (m_reg[15] - 2) + 1;
   else
-    return R[15] - 4;
+    return m_reg[15] - 4;
 }
 
 void ARMv5::Shutdown()
@@ -534,12 +526,12 @@ void ARMv5::SingleStepInterpreter(bool skip_bp)
   }
 #endif
 
-  if (CPSR & 0x20)  // THUMB
+  if (m_reg_cpsr & 0x20)  // THUMB
   {
     // if constexpr (mode == CPUExecuteMode::InterpreterGDB)
     //   GdbCheckC();
 
-    u32 pcAddr = R[15] - 2;
+    u32 pcAddr = m_reg[15] - 2;
 
     if (!skip_bp)
     {
@@ -553,7 +545,8 @@ void ARMv5::SingleStepInterpreter(bool skip_bp)
                          "IOS_LLE THUMB BP {:08x} ({:08x} {:08x} {:08x} {:08x} {:08x} {:08x} "
                          "{:08x} {:08x} {:08x} "
                          "{:08x}) LR={:08x}",
-                         pcAddr, R[0], R[1], R[2], R[3], R[4], R[5], R[6], R[7], R[8], R[9], R[14]);
+                         pcAddr, m_reg[0], m_reg[1], m_reg[2], m_reg[3], m_reg[4], m_reg[5],
+                         m_reg[6], m_reg[7], m_reg[8], m_reg[9], m_reg[14]);
         }
 
         if (bp->break_on_hit)
@@ -565,21 +558,21 @@ void ARMv5::SingleStepInterpreter(bool skip_bp)
     }
 
     // prefetch
-    R[15] += 2;
-    CurInstr = NextInstr[0];
-    NextInstr[0] = NextInstr[1] >> 16;
-    if (R[15] & 0x2)
+    m_reg[15] += 2;
+    m_inst = m_next_inst[0];
+    m_next_inst[0] = m_next_inst[1] >> 16;
+    if (m_reg[15] & 0x2)
     {
-      NextInstr[1] <<= 16;
-      CodeCycles = 0;
+      m_next_inst[1] <<= 16;
+      m_code_cycles = 0;
     }
     else
-      NextInstr[1] = CodeRead32(R[15], false);
+      m_next_inst[1] = CodeRead32(m_reg[15], false);
 
-    // INFO_LOG_FMT(IOS_LLE, "THUMB9 instruction {:04x} @ {:08x}\n", CurInstr & 0xFFFF, pcAddr);
+    // INFO_LOG_FMT(IOS_LLE, "THUMB9 instruction {:04x} @ {:08x}\n", m_inst & 0xFFFF, pcAddr);
 
     // actually execute
-    u32 icode = (CurInstr >> 6) & 0x3FF;
+    u32 icode = (m_inst >> 6) & 0x3FF;
     ARMInterpreter::THUMBInstrTable[icode](this);
   }
   else
@@ -587,7 +580,7 @@ void ARMv5::SingleStepInterpreter(bool skip_bp)
     // if constexpr (mode == CPUExecuteMode::InterpreterGDB)
     //   GdbCheckC();
 
-    u32 pcAddr = R[15] - 4;
+    u32 pcAddr = m_reg[15] - 4;
 
     if (!skip_bp)
     {
@@ -601,7 +594,8 @@ void ARMv5::SingleStepInterpreter(bool skip_bp)
                          "IOS_LLE ARM BP {:08x} ({:08x} {:08x} {:08x} {:08x} {:08x} {:08x} "
                          "{:08x} {:08x} {:08x} "
                          "{:08x}) LR={:08x}",
-                         pcAddr, R[0], R[1], R[2], R[3], R[4], R[5], R[6], R[7], R[8], R[9], R[14]);
+                         pcAddr, m_reg[0], m_reg[1], m_reg[2], m_reg[3], m_reg[4], m_reg[5],
+                         m_reg[6], m_reg[7], m_reg[8], m_reg[9], m_reg[14]);
         }
 
         if (bp->break_on_hit)
@@ -613,20 +607,20 @@ void ARMv5::SingleStepInterpreter(bool skip_bp)
     }
 
     // prefetch
-    R[15] += 4;
-    CurInstr = NextInstr[0];
-    NextInstr[0] = NextInstr[1];
-    NextInstr[1] = CodeRead32(R[15], false);
+    m_reg[15] += 4;
+    m_inst = m_next_inst[0];
+    m_next_inst[0] = m_next_inst[1];
+    m_next_inst[1] = CodeRead32(m_reg[15], false);
 
-    // INFO_LOG_FMT(IOS_LLE, "ARM9 instruction {:08x} @ {:08x}\n", CurInstr, pcAddr);
+    // INFO_LOG_FMT(IOS_LLE, "ARM9 instruction {:08x} @ {:08x}\n", m_inst, pcAddr);
 
     // actually execute
-    if (CheckCondition(CurInstr >> 28))
+    if (CheckCondition(m_inst >> 28))
     {
-      u32 icode = ((CurInstr >> 4) & 0xF) | ((CurInstr >> 16) & 0xFF0);
+      u32 icode = ((m_inst >> 4) & 0xF) | ((m_inst >> 16) & 0xFF0);
       ARMInterpreter::ARMInstrTable[icode](this);
     }
-    else if ((CurInstr & 0xFE000000) == 0xFA000000)
+    else if ((m_inst & 0xFE000000) == 0xFA000000)
     {
       ARMInterpreter::A_BLX_IMM(this);
     }
@@ -650,7 +644,7 @@ void ARMv5::SingleStepInterpreter(bool skip_bp)
       if (NDS::IME[0] & 0x1)
           TriggerIRQ();
   }*/
-  if (IRQ)
+  if (m_is_irq)
     TriggerIRQ();
 }
 
@@ -718,7 +712,7 @@ void ARMv5::SingleStep(bool skip_bp)
   }
 
   // NDS.ARM9Timestamp += Cycles;
-  Cycles = 0;
+  m_cycles = 0;
 }
 
 void ARMv5::RunLoop()
@@ -728,15 +722,15 @@ void ARMv5::RunLoop()
 
   auto& cpu = m_system.GetCPU(m_cpu_number);
 
-  if (Halted)
+  if (m_is_halted)
   {
-    if (Halted == 2)
+    if (m_is_halted == 2)
     {
-      Halted = 0;
+      m_is_halted = 0;
     }
     else if (false)
     {
-      Halted = 0;
+      m_is_halted = 0;
       if (/* NDS.IME[0] */ 0 & 0x1)
         TriggerIRQ();
     }
@@ -753,8 +747,8 @@ void ARMv5::RunLoop()
     start = false;
   }
 
-  if (Halted == 2)
-    Halted = 0;
+  if (m_is_halted == 2)
+    m_is_halted = 0;
 
   Host_UpdateDisasmDialog();
 }
@@ -763,28 +757,28 @@ void ARMv5::FillPipeline()
 {
   // SetupCodeMem(R[15]);
 
-  if (CPSR & 0x20)
+  if (m_reg_cpsr & 0x20)
   {
-    if ((R[15] - 2) & 0x2)
+    if ((m_reg[15] - 2) & 0x2)
     {
-      NextInstr[0] = CodeRead32(R[15] - 4, false) >> 16;
-      NextInstr[1] = CodeRead32(R[15], false);
+      m_next_inst[0] = CodeRead32(m_reg[15] - 4, false) >> 16;
+      m_next_inst[1] = CodeRead32(m_reg[15], false);
     }
     else
     {
-      NextInstr[0] = CodeRead32(R[15] - 2, false);
-      NextInstr[1] = NextInstr[0] >> 16;
+      m_next_inst[0] = CodeRead32(m_reg[15] - 2, false);
+      m_next_inst[1] = m_next_inst[0] >> 16;
     }
   }
   else
   {
-    NextInstr[0] = CodeRead32(R[15] - 4, false);
-    NextInstr[1] = CodeRead32(R[15], false);
+    m_next_inst[0] = CodeRead32(m_reg[15] - 4, false);
+    m_next_inst[1] = CodeRead32(m_reg[15], false);
   }
 }
 
 #ifdef GDBSTUB_ENABLED
-u32 ARM::ReadReg(Gdb::Register reg)
+u32 ARMv5::ReadReg(Gdb::Register reg)
 {
   using Gdb::Register;
   int r = static_cast<int>(reg);
@@ -858,7 +852,7 @@ u32 ARM::ReadReg(Gdb::Register reg)
   WARN_LOG_FMT(IOS_LLE, "GDB reg read: unknown reg no %d\n", r);
   return 0xdeadbeef;
 }
-void ARM::WriteReg(Gdb::Register reg, u32 v)
+void ARMv5::WriteReg(Gdb::Register reg, u32 v)
 {
   using Gdb::Register;
   int r = static_cast<int>(reg);
@@ -944,7 +938,7 @@ void ARM::WriteReg(Gdb::Register reg, u32 v)
   else
     WARN_LOG_FMT(IOS_LLE, "GDB reg write: unknown reg no %d (write 0x{:08x})\n", r, v);
 }
-u32 ARM::ReadMem(u32 addr, int size)
+u32 ARMv5::ReadMem(u32 addr, int size)
 {
   if (size == 8)
     return BusRead8(addr);
@@ -955,7 +949,7 @@ u32 ARM::ReadMem(u32 addr, int size)
   else
     return 0xfeedface;
 }
-void ARM::WriteMem(u32 addr, int size, u32 v)
+void ARMv5::WriteMem(u32 addr, int size, u32 v)
 {
   if (size == 8)
     BusWrite8(addr, (u8)v);
@@ -965,12 +959,12 @@ void ARM::WriteMem(u32 addr, int size, u32 v)
     BusWrite32(addr, v);
 }
 
-void ARM::ResetGdb()
+void ARMv5::ResetGdb()
 {
   NDS.Reset();
   NDS.GPU.StartFrame();  // need this to properly kick off the scheduler & frame output
 }
-int ARM::RemoteCmd(const u8* cmd, size_t len)
+int ARMv5::RemoteCmd(const u8* cmd, size_t len)
 {
   (void)len;
 
@@ -1013,7 +1007,7 @@ void ARMv5::WriteMem(u32 addr, int size, u32 v)
     return;
   }
 
-  ARM::WriteMem(addr, size, v);
+  ARMv5::WriteMem(addr, size, v);
 }
 u32 ARMv5::ReadMem(u32 addr, int size)
 {
@@ -1040,7 +1034,7 @@ u32 ARMv5::ReadMem(u32 addr, int size)
       return 0xfeedface;
   }
 
-  return ARM::ReadMem(addr, size);
+  return ARMv5::ReadMem(addr, size);
 }
 #endif
 
@@ -1090,7 +1084,7 @@ T ARMv5::ReadFromHardware(u32 addr, bool host)
     if (addr + sizeof(T) > m_memory.GetRamSizeReal())
     {
       if (!host)
-        ERROR_LOG_FMT(IOS_LLE, "Attempt to read past RAM bounds: {:x} PC {:x}", addr, R[15]);
+        ERROR_LOG_FMT(IOS_LLE, "Attempt to read past RAM bounds: {:x} PC {:x}", addr, m_reg[15]);
       return 0;
     }
 
@@ -1108,7 +1102,7 @@ T ARMv5::ReadFromHardware(u32 addr, bool host)
     if (addr + sizeof(T) > m_memory.GetExRamSizeReal())
     {
       if (!host)
-        ERROR_LOG_FMT(IOS_LLE, "Attempt to read past EXRAM bounds: {:x} PC {:x}", addr, R[15]);
+        ERROR_LOG_FMT(IOS_LLE, "Attempt to read past EXRAM bounds: {:x} PC {:x}", addr, m_reg[15]);
       return 0;
     }
 
@@ -1128,7 +1122,8 @@ T ARMv5::ReadFromHardware(u32 addr, bool host)
     if (addr + sizeof(T) > m_memory.GetIopSramSize())
     {
       if (!host)
-        ERROR_LOG_FMT(IOS_LLE, "Attempt to read past IOP SRAM bounds: {:x} PC {:x}", addr, R[15]);
+        ERROR_LOG_FMT(IOS_LLE, "Attempt to read past IOP SRAM bounds: {:x} PC {:x}", addr,
+                      m_reg[15]);
       return 0;
     }
 
@@ -1141,7 +1136,7 @@ T ARMv5::ReadFromHardware(u32 addr, bool host)
   // TODO: boot0 ROM
 
   if (!host)
-    ERROR_LOG_FMT(IOS_LLE, "Unable to resolve ARM read address {:x} PC {:x}", addr, R[15]);
+    ERROR_LOG_FMT(IOS_LLE, "Unable to resolve ARM read address {:x} PC {:x}", addr, m_reg[15]);
   return 0;
 }
 
@@ -1186,7 +1181,7 @@ void ARMv5::WriteToHardware(u32 addr, const u32 data, const u32 size, bool host)
     if (addr + size > m_memory.GetRamSizeReal())
     {
       if (!host)
-        ERROR_LOG_FMT(IOS_LLE, "Attempt to write past RAM bounds: {:x} PC {:x}", addr, R[15]);
+        ERROR_LOG_FMT(IOS_LLE, "Attempt to write past RAM bounds: {:x} PC {:x}", addr, m_reg[15]);
       return;
     }
 
@@ -1203,7 +1198,7 @@ void ARMv5::WriteToHardware(u32 addr, const u32 data, const u32 size, bool host)
     if (addr + size > m_memory.GetExRamSizeReal())
     {
       if (!host)
-        ERROR_LOG_FMT(IOS_LLE, "Attempt to write past EXRAM bounds: {:x} PC {:x}", addr, R[15]);
+        ERROR_LOG_FMT(IOS_LLE, "Attempt to write past EXRAM bounds: {:x} PC {:x}", addr, m_reg[15]);
       return;
     }
 
@@ -1221,7 +1216,8 @@ void ARMv5::WriteToHardware(u32 addr, const u32 data, const u32 size, bool host)
     if (addr + size > m_memory.GetIopSramSize())
     {
       if (!host)
-        ERROR_LOG_FMT(IOS_LLE, "Attempt to write past IOP SRAM bounds: {:x} PC {:x}", addr, R[15]);
+        ERROR_LOG_FMT(IOS_LLE, "Attempt to write past IOP SRAM bounds: {:x} PC {:x}", addr,
+                      m_reg[15]);
       return;
     }
 
@@ -1233,7 +1229,7 @@ void ARMv5::WriteToHardware(u32 addr, const u32 data, const u32 size, bool host)
   // TODO: boot0 ROM
 
   if (!host)
-    ERROR_LOG_FMT(IOS_LLE, "Unable to resolve ARM write address {:x} PC {:x}", addr, R[15]);
+    ERROR_LOG_FMT(IOS_LLE, "Unable to resolve ARM write address {:x} PC {:x}", addr, m_reg[15]);
 }
 
 u8 ARMv5::BusRead8(u32 addr)
@@ -1271,6 +1267,7 @@ u32 ARMv5::HostRead_U32(u32 addr)
   TranslateAddress(addr, false, true);
   return ReadFromHardware<u32>(addr, true);
 }
+
 u32 ARMv5::HostRead_Instruction(u32 addr)
 {
   TranslateAddress(addr, false, true);

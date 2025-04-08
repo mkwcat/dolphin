@@ -34,16 +34,16 @@ namespace IOS::LLE
 
 void ARMv5::CP15Reset()
 {
-  CP15Control = 0x2078;  // dunno
+  m_reg_cp15_control = 0x2078;  // dunno
 
-  RNGSeed = 44203;
+  m_rng_seed = 44203;
   m_reg_context_id = 0;
 
-  memset(ICache, 0, 0x2000);
+  memset(m_icache_data, 0, 0x2000);
   ICacheInvalidateAll();
-  memset(ICacheCount, 0, 64);
+  memset(m_icache_count, 0, 64);
 
-  CurICacheLine = NULL;
+  m_icache_line = NULL;
 }
 
 #if 0
@@ -107,7 +107,7 @@ bool ARMv5::CheckAccessPermission(u32 ap, bool is_write)
     {
       return false;
     }
-    switch ((CP15Control >> 8) & 0b11)
+    switch ((m_reg_cp15_control >> 8) & 0b11)
     {
     case 0b00:
     case 0b11:
@@ -120,12 +120,12 @@ bool ARMv5::CheckAccessPermission(u32 ap, bool is_write)
 
     case 0b01:
       // Read-only if privileged.
-      return !!(CPSR & 0b1111);
+      return !!(m_reg_cpsr & 0b1111);
     }
   }
 
   // Can always access everything in a privileged mode.
-  if (CPSR & 0b1111)
+  if (m_reg_cpsr & 0b1111)
   {
     return true;
   }
@@ -150,7 +150,7 @@ bool ARMv5::CheckAccessPermission(u32 ap, bool is_write)
 
 bool ARMv5::TranslateAddress(u32& addr, bool is_write, bool host)
 {
-  if (!(CP15Control & 0x5))
+  if (!(m_reg_cp15_control & 0x5))
     return true;
 
   const u32 first_level_offset = (addr >> 20) & 0xFFF;
@@ -243,11 +243,11 @@ bool ARMv5::TranslateAddress(u32& addr, bool is_write, bool host)
 u32 ARMv5::RandomLineIndex()
 {
   // lame RNG, but good enough for this purpose
-  u32 s = RNGSeed;
-  RNGSeed ^= (s * 17);
-  RNGSeed ^= (s * 7);
+  u32 s = m_rng_seed;
+  m_rng_seed ^= (s * 17);
+  m_rng_seed ^= (s * 7);
 
-  return (RNGSeed >> 17) & 0x3;
+  return (m_rng_seed >> 17) & 0x3;
 }
 
 void ARMv5::ICacheLookup(u32 addr)
@@ -256,38 +256,38 @@ void ARMv5::ICacheLookup(u32 addr)
   u32 id = (addr >> 5) & 0x3F;
 
   id <<= 2;
-  if (ICacheTags[id + 0] == tag)
+  if (m_icache_tags[id + 0] == tag)
   {
-    CodeCycles = 1;
-    CurICacheLine = &ICache[(id + 0) << 5];
+    m_code_cycles = 1;
+    m_icache_line = &m_icache_data[(id + 0) << 5];
     return;
   }
-  if (ICacheTags[id + 1] == tag)
+  if (m_icache_tags[id + 1] == tag)
   {
-    CodeCycles = 1;
-    CurICacheLine = &ICache[(id + 1) << 5];
+    m_code_cycles = 1;
+    m_icache_line = &m_icache_data[(id + 1) << 5];
     return;
   }
-  if (ICacheTags[id + 2] == tag)
+  if (m_icache_tags[id + 2] == tag)
   {
-    CodeCycles = 1;
-    CurICacheLine = &ICache[(id + 2) << 5];
+    m_code_cycles = 1;
+    m_icache_line = &m_icache_data[(id + 2) << 5];
     return;
   }
-  if (ICacheTags[id + 3] == tag)
+  if (m_icache_tags[id + 3] == tag)
   {
-    CodeCycles = 1;
-    CurICacheLine = &ICache[(id + 3) << 5];
+    m_code_cycles = 1;
+    m_icache_line = &m_icache_data[(id + 3) << 5];
     return;
   }
 
   // cache miss
 
   u32 line;
-  if (CP15Control & (1 << 14))
+  if (m_reg_cp15_control & (1 << 14))
   {
-    line = ICacheCount[id >> 2];
-    ICacheCount[id >> 2] = (line + 1) & 0x3;
+    line = m_icache_count[id >> 2];
+    m_icache_count[id >> 2] = (line + 1) & 0x3;
   }
   else
   {
@@ -297,7 +297,7 @@ void ARMv5::ICacheLookup(u32 addr)
   line += id;
 
   addr &= ~0x1F;
-  u8* ptr = &ICache[line << 5];
+  u8* ptr = &m_icache_data[line << 5];
 
 #if 0
     if (CodeMem.Mem)
@@ -311,14 +311,14 @@ void ARMv5::ICacheLookup(u32 addr)
       *(u32*)&ptr[i] = BusRead32(addr + i);
   }
 
-  ICacheTags[line] = tag;
+  m_icache_tags[line] = tag;
 
   // ouch :/
   // printf("cache miss %08X: %d/%d\n", addr, NDS::ARM9MemTimings[addr >> 14][2],
   // NDS::ARM9MemTimings[addr >> 14][3]);
   // CodeCycles = (NDS.ARM9MemTimings[addr >> 14][2] + (NDS.ARM9MemTimings[addr >> 14][3] * 7)) <<
   // NDS.ARM9ClockShift;
-  CurICacheLine = ptr;
+  m_icache_line = ptr;
 }
 
 void ARMv5::ICacheInvalidateByAddr(u32 addr)
@@ -327,24 +327,24 @@ void ARMv5::ICacheInvalidateByAddr(u32 addr)
   u32 id = (addr >> 5) & 0x3F;
 
   id <<= 2;
-  if (ICacheTags[id + 0] == tag)
+  if (m_icache_tags[id + 0] == tag)
   {
-    ICacheTags[id + 0] = 1;
+    m_icache_tags[id + 0] = 1;
     return;
   }
-  if (ICacheTags[id + 1] == tag)
+  if (m_icache_tags[id + 1] == tag)
   {
-    ICacheTags[id + 1] = 1;
+    m_icache_tags[id + 1] = 1;
     return;
   }
-  if (ICacheTags[id + 2] == tag)
+  if (m_icache_tags[id + 2] == tag)
   {
-    ICacheTags[id + 2] = 1;
+    m_icache_tags[id + 2] = 1;
     return;
   }
-  if (ICacheTags[id + 3] == tag)
+  if (m_icache_tags[id + 3] == tag)
   {
-    ICacheTags[id + 3] = 1;
+    m_icache_tags[id + 3] = 1;
     return;
   }
 }
@@ -352,7 +352,7 @@ void ARMv5::ICacheInvalidateByAddr(u32 addr)
 void ARMv5::ICacheInvalidateAll()
 {
   for (int i = 0; i < 64 * 4; i++)
-    ICacheTags[i] = 1;
+    m_icache_tags[i] = 1;
 }
 
 void ARMv5::CP15Write(u32 id, u32 val)
@@ -363,17 +363,17 @@ void ARMv5::CP15Write(u32 id, u32 val)
   {
   case 0x100:
   {
-    u32 old = CP15Control;
+    // u32 old = m_reg_cp15_control;
     val &= 0x000FF085;
-    CP15Control &= ~0x000FF085;
-    CP15Control |= val;
+    m_reg_cp15_control &= ~0x000FF085;
+    m_reg_cp15_control |= val;
     // printf("CP15Control = %08X (%08X->%08X)\n", CP15Control, old, val);
     // if (val & (1<<7)) WARN_LOG_FMT(IOS_LLE, "!!!! ARM9 BIG ENDIAN MODE. VERY BAD. SHIT GONNA
     // ASPLODE NOW\n");
     if (val & (1 << 13))
-      ExceptionBase = 0xFFFF0000;
+      m_exception_base = 0xFFFF0000;
     else
-      ExceptionBase = 0x00000000;
+      m_exception_base = 0x00000000;
   }
     return;
 
@@ -499,7 +499,7 @@ u32 ARMv5::CP15Read(u32 id) const
     return 0x0F0D2112;
 
   case 0x100:  // control reg
-    return CP15Control;
+    return m_reg_cp15_control;
 
   case 0x200:  // TTBR (Translation Table Base Register)
     return m_reg_ttbr;
@@ -538,15 +538,6 @@ u32 ARMv5::CP15Read(u32 id) const
 u32 ARMv5::CodeRead32(u32 addr, bool branch)
 {
 #if 0
-    /*if (branch || (!(addr & 0xFFF)))
-    {
-        if (!(PU_Map[addr>>12] & 0x04))
-        {
-            PrefetchAbort();
-            return 0;
-        }
-    }*/
-
     CodeCycles = RegionCodeCycles;
     if (CodeCycles == 0xFF) // cached memory. hax
     {
@@ -561,7 +552,7 @@ u32 ARMv5::CodeRead32(u32 addr, bool branch)
     if (CodeMem.Mem) return *(u32*)&CodeMem.Mem[addr & CodeMem.Mask];
 #endif
 
-  if (addr & 3 || (CP15Control & 0x5 && !TranslateAddress(addr, false)))
+  if (addr & 3 || (m_reg_cp15_control & 0x5 && !TranslateAddress(addr, false)))
   {
     m_reg_far = addr;
     PrefetchAbort();
@@ -573,14 +564,14 @@ u32 ARMv5::CodeRead32(u32 addr, bool branch)
 
 void ARMv5::DataRead8(u32 addr, u32* val)
 {
-  if (CP15Control & 0x5 && !TranslateAddress(addr, false))
+  if (m_reg_cp15_control & 0x5 && !TranslateAddress(addr, false))
   {
     m_reg_far = addr;
     DataAbort();
     return;
   }
 
-  DataRegion = addr;
+  m_data_region = addr;
 
   *val = BusRead8(addr);
   // WARN_LOG_FMT(IOS_LLE, "DataRead8: {:08x} = {:02x}\n", addr, *val);
@@ -596,7 +587,7 @@ void ARMv5::DataRead16(u32 addr, u32* val)
     return;
   }
 
-  DataRegion = addr;
+  m_data_region = addr;
 
   addr &= ~1;
 
@@ -614,7 +605,7 @@ void ARMv5::DataRead32(u32 addr, u32* val)
     return;
   }
 
-  DataRegion = addr;
+  m_data_region = addr;
 
   addr &= ~3;
 
@@ -640,7 +631,7 @@ void ARMv5::DataWrite8(u32 addr, u8 val)
     return;
   }
 
-  DataRegion = addr;
+  m_data_region = addr;
 
   BusWrite8(addr, val);
   // DataCycles = MemTimings[addr >> 12][1];
@@ -655,7 +646,7 @@ void ARMv5::DataWrite16(u32 addr, u16 val)
     return;
   }
 
-  DataRegion = addr;
+  m_data_region = addr;
 
   addr &= ~1;
 
@@ -672,7 +663,7 @@ void ARMv5::DataWrite32(u32 addr, u32 val)
     return;
   }
 
-  DataRegion = addr;
+  m_data_region = addr;
 
   addr &= ~3;
 

@@ -31,6 +31,7 @@
 #include "Core/Core.h"
 #include "Core/Debugger/CodeTrace.h"
 #include "Core/Debugger/PPCDebugInterface.h"
+#include "Core/HW/CPU.h"
 #include "Core/PowerPC/MMU.h"
 #include "Core/PowerPC/PPCAnalyst.h"
 #include "Core/PowerPC/PPCSymbolDB.h"
@@ -72,7 +73,8 @@ private:
     painter->setPen(m_parent->palette().text().color());
 
     constexpr u32 x_offset_in_branch_for_vertical_line = 10;
-    const u32 addr = m_parent->AddressForRow(index.row());
+    const u32 addr = m_parent->AddressForRow(
+        index.row(), Core::System::GetInstance().GetDebuggingCPUNum() == CPU::CPUNumber::ARM9);
     for (const CodeViewBranch& branch : m_parent->m_branches)
     {
       const int y_center = option.rect.top() + option.rect.height() / 2;
@@ -242,10 +244,16 @@ void CodeViewWidget::FontBasedSizing()
   Update();
 }
 
-u32 CodeViewWidget::AddressForRow(int row) const
+u32 CodeViewWidget::AddressForRow(int row, bool is_arm) const
 {
   // m_address is defined as the center row of the table, so we have rowCount/2 instructions above
   // it; an instruction is 4 bytes long on GC/Wii so we increment 4 bytes per row
+  if (is_arm && m_address & 1)
+  {
+    // THUMB is 2 bytes long actually
+    const u32 row_zero_address = m_address - ((rowCount() / 2) * 2);
+    return row_zero_address + row * 2;
+  }
   const u32 row_zero_address = m_address - ((rowCount() / 2) * 4);
   return row_zero_address + row * 4;
 }
@@ -314,19 +322,21 @@ void CodeViewWidget::Update(const Core::CPUThreadGuard* guard)
 
   auto& cpu = m_system.GetCPU(m_system.GetDebuggingCPUNum());
 
-  const std::optional<u32> pc =
-      guard ? std::make_optional(cpu.GetPC()) : std::nullopt;
+  const std::optional<u32> pc = guard ? std::make_optional(cpu.GetPC()) : std::nullopt;
 
   const bool dark_theme = Settings::Instance().IsThemeDark();
 
   m_branches.clear();
 
+  bool is_arm = !!cpu.GetARM9();
+
   for (int i = 0; i < rowCount(); i++)
   {
-    const u32 addr = AddressForRow(i);
+    const u32 addr = AddressForRow(i, is_arm);
     const u32 color = debug_interface.GetColor(guard, addr);
     auto* bp_item = new QTableWidgetItem;
-    auto* addr_item = new QTableWidgetItem(QStringLiteral("%1").arg(addr, 8, 16, QLatin1Char('0')));
+    auto* addr_item = new QTableWidgetItem(
+        QStringLiteral("%1").arg(is_arm ? addr & ~1 : addr, 8, 16, QLatin1Char('0')));
 
     std::string disas = debug_interface.Disassemble(guard, addr);
     auto split = disas.find('\t');
@@ -489,8 +499,10 @@ void CodeViewWidget::CalculateBranchIndentation()
       arrow_space_used[index(*free_column, row)] = true;
   };
 
-  const u32 first_visible_addr = AddressForRow(0);
-  const u32 last_visible_addr = AddressForRow(rows - 1);
+  const bool is_arm = m_system.GetDebuggingCPUNum() == CPU::CPUNumber::ARM9;
+
+  const u32 first_visible_addr = AddressForRow(0, is_arm);
+  const u32 last_visible_addr = AddressForRow(rows - 1, is_arm);
 
   if (first_visible_addr <= last_visible_addr)
   {
@@ -506,7 +518,7 @@ void CodeViewWidget::CalculateBranchIndentation()
     int addr_zero_row = -1;
     for (u32 row = 0; row < rows; row++)
     {
-      if (AddressForRow(row) == 0)
+      if (AddressForRow(row, is_arm) == 0)
       {
         addr_zero_row = row;
         break;
@@ -688,7 +700,7 @@ void CodeViewWidget::AutoStep(CodeTrace::AutoStop option)
   {
     // Run autostep then update codeview
     const AutoStepResults results = code_trace.AutoStepping(guard, repeat, option);
-    emit Host::GetInstance()->UpdateDisasmDialog();
+    emit Host::GetInstance() -> UpdateDisasmDialog();
     repeat = true;
 
     // Invalid instruction, 0 means no step executed.
@@ -889,7 +901,7 @@ void CodeViewWidget::OnAddFunction()
   Core::CPUThreadGuard guard(m_system);
 
   m_ppc_symbol_db.AddFunction(guard, addr);
-  emit Host::GetInstance()->PPCSymbolsChanged();
+  emit Host::GetInstance() -> PPCSymbolsChanged();
 }
 
 void CodeViewWidget::OnInsertBLR()
@@ -938,7 +950,7 @@ void CodeViewWidget::OnRenameSymbol()
   if (good && !name.isEmpty())
   {
     symbol->Rename(name.toStdString());
-    emit Host::GetInstance()->PPCSymbolsChanged();
+    emit Host::GetInstance() -> PPCSymbolsChanged();
   }
 }
 
@@ -975,7 +987,7 @@ void CodeViewWidget::OnSetSymbolSize()
   Core::CPUThreadGuard guard(m_system);
 
   PPCAnalyst::ReanalyzeFunction(guard, symbol->address, *symbol, size);
-  emit Host::GetInstance()->PPCSymbolsChanged();
+  emit Host::GetInstance() -> PPCSymbolsChanged();
 }
 
 void CodeViewWidget::OnSetSymbolEndAddress()
@@ -1002,7 +1014,7 @@ void CodeViewWidget::OnSetSymbolEndAddress()
   Core::CPUThreadGuard guard(m_system);
 
   PPCAnalyst::ReanalyzeFunction(guard, symbol->address, *symbol, address - symbol->address);
-  emit Host::GetInstance()->PPCSymbolsChanged();
+  emit Host::GetInstance() -> PPCSymbolsChanged();
 }
 
 void CodeViewWidget::OnReplaceInstruction()
@@ -1139,14 +1151,14 @@ void CodeViewWidget::ToggleBreakpoint()
 {
   m_system.GetPowerPC().GetBreakPoints().ToggleBreakPoint(GetContextAddress());
 
-  emit Host::GetInstance()->PPCBreakpointsChanged();
+  emit Host::GetInstance() -> PPCBreakpointsChanged();
 }
 
 void CodeViewWidget::AddBreakpoint()
 {
   m_system.GetPowerPC().GetBreakPoints().Add(GetContextAddress());
 
-  emit Host::GetInstance()->PPCBreakpointsChanged();
+  emit Host::GetInstance() -> PPCBreakpointsChanged();
 }
 
 u32 CodeViewWidget::GetContextAddress() const

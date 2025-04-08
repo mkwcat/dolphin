@@ -52,7 +52,7 @@ public:
   void ToggleBreakpoint();
   void AddBreakpoint();
 
-  u32 AddressForRow(int row) const;
+  u32 AddressForRow(int row, bool is_arm = false) const;
 
 signals:
   void RequestPPCComparison(u32 address, bool translate_address);
