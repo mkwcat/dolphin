@@ -11,7 +11,12 @@
 #include <optional>
 #include <string>
 
+#ifdef USE_RETRO_ACHIEVEMENTS
+#include "Common/Config/Config.h"
+#endif  // USE_RETRO_ACHIEVEMENTS
+
 #include "Core/Boot/Boot.h"
+#include "DolphinQt/FIFO/FIFOPlayerWindow.h"
 
 class QMenu;
 class QStackedWidget;
@@ -23,15 +28,12 @@ class BreakpointWidget;
 struct BootParameters;
 class CheatsManager;
 class CodeWidget;
-class ControllersWindow;
 class DiscordHandler;
 class DragEnterEvent;
-class FIFOPlayerWindow;
 class FreeLookWindow;
 class GameList;
 class GBATASInputWindow;
 class GCTASInputWindow;
-class GraphicsWindow;
 class HotkeyScheduler;
 class InfinityBaseWindow;
 class JITWidget;
@@ -52,6 +54,7 @@ class ThreadWidget;
 class ToolBar;
 class WatchWidget;
 class WiiTASInputWindow;
+class WiiSpeakWindow;
 struct WindowSystemInfo;
 
 namespace Core
@@ -81,7 +84,7 @@ class MainWindow final : public QMainWindow
 public:
   explicit MainWindow(Core::System& system, std::unique_ptr<BootParameters> boot_parameters,
                       const std::string& movie_path);
-  ~MainWindow();
+  ~MainWindow() override;
 
   WindowSystemInfo GetWindowSystemInfo() const;
 
@@ -173,6 +176,7 @@ private:
   void ShowFIFOPlayer();
   void ShowSkylanderPortal();
   void ShowInfinityBase();
+  void ShowWiiSpeakWindow();
   void ShowMemcardManager();
   void ShowResourcePackManager();
   void ShowCheatsManager();
@@ -181,6 +185,7 @@ private:
 #ifdef USE_RETRO_ACHIEVEMENTS
   void ShowAchievementsWindow();
   void ShowAchievementSettings();
+  void OnHardcoreChanged();
 #endif  // USE_RETRO_ACHIEVEMENTS
 
   void NetPlayInit();
@@ -239,12 +244,13 @@ private:
   u32 m_state_slot = 1;
   std::unique_ptr<BootParameters> m_pending_boot;
 
-  ControllersWindow* m_controllers_window = nullptr;
   SettingsWindow* m_settings_window = nullptr;
-  GraphicsWindow* m_graphics_window = nullptr;
-  FIFOPlayerWindow* m_fifo_window = nullptr;
+  // m_fifo_window doesn't set MainWindow as its parent so that the fifo can be focused without
+  // raising the main window, so use a unique_ptr to make sure it gets destroyed.
+  std::unique_ptr<FIFOPlayerWindow> m_fifo_window = nullptr;
   SkylanderPortalWindow* m_skylander_window = nullptr;
   InfinityBaseWindow* m_infinity_window = nullptr;
+  WiiSpeakWindow* m_wii_speak_window = nullptr;
   MappingWindow* m_hotkey_window = nullptr;
   FreeLookWindow* m_freelook_window = nullptr;
 
@@ -260,6 +266,8 @@ private:
 
 #ifdef USE_RETRO_ACHIEVEMENTS
   AchievementsWindow* m_achievements_window = nullptr;
+  Config::ConfigChangedCallbackID m_config_changed_callback_id;
+  bool m_former_hardcore_setting = false;
 #endif  // USE_RETRO_ACHIEVEMENTS
 
   AssemblerWidget* m_assembler_widget;

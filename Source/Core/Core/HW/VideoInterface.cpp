@@ -13,8 +13,10 @@
 #include "Common/Config/Config.h"
 #include "Common/Logging/Log.h"
 
+#include "VideoCommon/OnScreenDisplay.h"
 #include "VideoCommon/PerformanceMetrics.h"
 
+#include "Core/AchievementManager.h"
 #include "Core/Config/GraphicsSettings.h"
 #include "Core/Config/MainSettings.h"
 #include "Core/Config/SYSCONFSettings.h"
@@ -41,7 +43,10 @@ VideoInterfaceManager::VideoInterfaceManager(Core::System& system) : m_system(sy
 {
 }
 
-VideoInterfaceManager::~VideoInterfaceManager() = default;
+VideoInterfaceManager::~VideoInterfaceManager()
+{
+  Config::RemoveConfigChangedCallback(m_config_changed_callback_id);
+}
 
 static constexpr std::array<u32, 2> CLOCK_FREQUENCIES{{
     27000000,
@@ -173,6 +178,22 @@ void VideoInterfaceManager::Preset(bool _bNTSC)
 void VideoInterfaceManager::Init()
 {
   Preset(true);
+
+  m_config_changed_callback_id = Config::AddConfigChangedCallback([this] { RefreshConfig(); });
+  RefreshConfig();
+}
+
+void VideoInterfaceManager::RefreshConfig()
+{
+  m_config_vi_oc_factor =
+      Config::Get(Config::MAIN_VI_OVERCLOCK_ENABLE) ? Config::Get(Config::MAIN_VI_OVERCLOCK) : 1.0f;
+  if (AchievementManager::GetInstance().IsHardcoreModeActive() && m_config_vi_oc_factor < 1.0f)
+  {
+    Config::SetCurrent(Config::MAIN_VI_OVERCLOCK, 1.0f);
+    m_config_vi_oc_factor = 1.0f;
+    OSD::AddMessage("Minimum VBI frequency is 100% in Hardcore Mode");
+  }
+  UpdateRefreshRate();
 }
 
 void VideoInterfaceManager::RegisterMMIO(MMIO::Mapping* mmio, u32 base)
@@ -484,9 +505,10 @@ float VideoInterfaceManager::GetAspectRatio() const
   int active_width_samples = (m_h_timing_0.HLW + m_h_timing_1.HBS640 - m_h_timing_1.HBE640);
 
   // 2. TVs are analog and don't have pixels. So we convert to seconds.
+  const auto ticks_per_halfline = GetNominalTicksPerHalfLine();
   float tick_length = (1.0f / m_system.GetSystemTimers().GetTicksPerSecond());
-  float vertical_period = tick_length * GetTicksPerField();
-  float horizontal_period = tick_length * GetTicksPerHalfLine() * 2;
+  float vertical_period = tick_length * ticks_per_halfline * GetHalfLinesPerEvenField();
+  float horizontal_period = tick_length * ticks_per_halfline * 2;
   float vertical_active_area = active_lines * horizontal_period;
   float horizontal_active_area = tick_length * GetTicksPerSample() * active_width_samples;
 
@@ -707,7 +729,11 @@ void VideoInterfaceManager::UpdateParameters()
                           m_vblank_timing_even.PRB - odd_even_psb_diff;
   m_even_field_last_hl = m_even_field_first_hl + acv_hl - 1;
 
-  // Refresh rate:
+  UpdateRefreshRate();
+}
+
+void VideoInterfaceManager::UpdateRefreshRate()
+{
   m_target_refresh_rate_numerator = m_system.GetSystemTimers().GetTicksPerSecond() * 2;
   m_target_refresh_rate_denominator = GetTicksPerEvenField() + GetTicksPerOddField();
   m_target_refresh_rate =
@@ -734,9 +760,14 @@ u32 VideoInterfaceManager::GetTicksPerSample() const
   return 2 * m_system.GetSystemTimers().GetTicksPerSecond() / CLOCK_FREQUENCIES[m_clock & 1];
 }
 
-u32 VideoInterfaceManager::GetTicksPerHalfLine() const
+u32 VideoInterfaceManager::GetNominalTicksPerHalfLine() const
 {
   return GetTicksPerSample() * m_h_timing_0.HLW;
+}
+
+u32 VideoInterfaceManager::GetTicksPerHalfLine() const
+{
+  return GetNominalTicksPerHalfLine() / m_config_vi_oc_factor;
 }
 
 u32 VideoInterfaceManager::GetTicksPerField() const
@@ -853,10 +884,14 @@ void VideoInterfaceManager::EndField(FieldType field, u64 ticks)
   if (!Config::Get(Config::GFX_HACK_EARLY_XFB_OUTPUT))
     OutputField(field, ticks);
 
-  // Note: We really only need to Throttle prior to to presentation,
-  //  but it is needed here if we want accurate "VBlank" statistics,
-  //  when using GPU-on-Thread or Early/Immediate XFB.
-  m_system.GetCoreTiming().Throttle(ticks);
+  // Note: OutputField above doesn't present when using GPU-on-Thread or Early/Immediate XFB,
+  //  giving "VBlank" measurements here poor pacing without a Throttle call.
+  // If the user actually wants the data, we'll Throttle to make the numbers nice.
+  const bool is_vblank_data_wanted = g_ActiveConfig.bShowVPS || g_ActiveConfig.bShowVTimes ||
+                                     g_ActiveConfig.bLogRenderTimeToFile ||
+                                     g_ActiveConfig.bShowGraphs;
+  if (is_vblank_data_wanted)
+    m_system.GetCoreTiming().Throttle(ticks);
 
   g_perf_metrics.CountVBlank();
   VIEndFieldEvent::Trigger();
@@ -914,6 +949,10 @@ void VideoInterfaceManager::Update(u64 ticks)
   {
     // Throttle before SI poll so user input is taken just before needed. (lower input latency)
     core_timing.Throttle(ticks);
+
+    // This is a nice place to measure performance so we don't have to Throttle elsewhere.
+    g_perf_metrics.CountPerformanceMarker(ticks, m_system.GetSystemTimers().GetTicksPerSecond());
+
     Core::UpdateInputGate(!Config::Get(Config::MAIN_INPUT_BACKGROUND_INPUT),
                           Config::Get(Config::MAIN_LOCK_CURSOR));
     auto& si = m_system.GetSerialInterface();

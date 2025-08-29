@@ -11,6 +11,7 @@
 #include "Common/Common.h"
 #include "Common/CommonTypes.h"
 #include "Common/Config/Config.h"
+#include "Core/USBUtils.h"
 #include "DiscIO/Enums.h"
 
 // DSP Backend Types
@@ -63,6 +64,7 @@ extern const Info<bool> MAIN_ACCURATE_CPU_CACHE;
 extern const Info<bool> MAIN_DSP_HLE;
 extern const Info<int> MAIN_MAX_FALLBACK;
 extern const Info<int> MAIN_TIMING_VARIANCE;
+extern const Info<bool> MAIN_CORRECT_TIME_DRIFT;
 extern const Info<bool> MAIN_CPU_THREAD;
 extern const Info<bool> MAIN_SYNC_ON_SKIP_IDLE;
 extern const Info<std::string> MAIN_DEFAULT_ISO;
@@ -72,6 +74,7 @@ extern const Info<bool> MAIN_OVERRIDE_REGION_SETTINGS;
 extern const Info<bool> MAIN_DPL2_DECODER;
 extern const Info<AudioCommon::DPL2Quality> MAIN_DPL2_QUALITY;
 extern const Info<int> MAIN_AUDIO_LATENCY;
+extern const Info<int> MAIN_AUDIO_BUFFER_SIZE;
 extern const Info<bool> MAIN_AUDIO_FILL_GAPS;
 extern const Info<std::string> MAIN_MEMCARD_A_PATH;
 extern const Info<std::string> MAIN_MEMCARD_B_PATH;
@@ -124,8 +127,11 @@ extern const Info<bool> MAIN_FPRF;
 extern const Info<bool> MAIN_ACCURATE_NANS;
 extern const Info<bool> MAIN_DISABLE_ICACHE;
 extern const Info<float> MAIN_EMULATION_SPEED;
+extern const Info<bool> MAIN_PRECISION_FRAME_TIMING;
 extern const Info<float> MAIN_OVERCLOCK;
 extern const Info<bool> MAIN_OVERCLOCK_ENABLE;
+extern const Info<float> MAIN_VI_OVERCLOCK;
+extern const Info<bool> MAIN_VI_OVERCLOCK_ENABLE;
 extern const Info<bool> MAIN_RAM_OVERRIDE_ENABLE;
 extern const Info<u32> MAIN_MEM1_SIZE;
 extern const Info<u32> MAIN_MEM2_SIZE;
@@ -267,6 +273,7 @@ extern const Info<bool> MAIN_GAMELIST_LIST_WAD;
 extern const Info<bool> MAIN_GAMELIST_LIST_ELF_DOL;
 extern const Info<bool> MAIN_GAMELIST_LIST_WII;
 extern const Info<bool> MAIN_GAMELIST_LIST_GC;
+extern const Info<bool> MAIN_GAMELIST_LIST_TRI;
 extern const Info<bool> MAIN_GAMELIST_LIST_JPN;
 extern const Info<bool> MAIN_GAMELIST_LIST_PAL;
 extern const Info<bool> MAIN_GAMELIST_LIST_USA;
@@ -350,14 +357,19 @@ extern const Info<std::string> MAIN_BLUETOOTH_PASSTHROUGH_LINK_KEYS;
 
 // Main.USBPassthrough
 
+extern const Info<bool> MAIN_USB_PASSTHROUGH_DISGUISE_PLAYSTATION_AS_WII;
 extern const Info<std::string> MAIN_USB_PASSTHROUGH_DEVICES;
-std::set<std::pair<u16, u16>> GetUSBDeviceWhitelist();
-void SetUSBDeviceWhitelist(const std::set<std::pair<u16, u16>>& devices);
+std::set<USBUtils::DeviceInfo> GetUSBDeviceWhitelist();
+void SetUSBDeviceWhitelist(const std::set<USBUtils::DeviceInfo>& devices);
 
 // Main.EmulatedUSBDevices
 
 extern const Info<bool> MAIN_EMULATE_SKYLANDER_PORTAL;
 extern const Info<bool> MAIN_EMULATE_INFINITY_BASE;
+extern const Info<bool> MAIN_EMULATE_WII_SPEAK;
+extern const Info<std::string> MAIN_WII_SPEAK_MICROPHONE;
+extern const Info<bool> MAIN_WII_SPEAK_MUTED;
+extern const Info<s16> MAIN_WII_SPEAK_VOLUME_MODIFIER;
 
 // GameCube path utility functions
 

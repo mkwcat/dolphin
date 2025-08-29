@@ -40,8 +40,9 @@
 #include "Core/WiiKeys.h"
 #include "IOS/USB/Emulated/Infinity.h"
 #include "IOS/USB/Emulated/Skylanders/Skylander.h"
+#include "IOS/USB/USBScanner.h"
 #include "IOS_LLE/ARM.h"
-#include "VideoCommon/Assets/CustomAssetLoader.h"
+#include "VideoCommon/Assets/CustomResourceManager.h"
 #include "VideoCommon/CommandProcessor.h"
 #include "VideoCommon/Fifo.h"
 #include "VideoCommon/GeometryShaderManager.h"
@@ -105,12 +106,13 @@ struct System::Impl
   SerialInterface::SerialInterfaceManager m_serial_interface;
   Sram m_sram;
   SystemTimers::SystemTimersManager m_system_timers;
+  IOS::HLE::USBScanner m_usb_scanner;
   VertexShaderManager m_vertex_shader_manager;
   XFStateManager m_xf_state_manager;
   VideoInterface::VideoInterfaceManager m_video_interface;
   Interpreter m_interpreter;
   JitInterface m_jit_interface;
-  VideoCommon::CustomAssetLoader m_custom_asset_loader;
+  VideoCommon::CustomResourceManager m_custom_resource_manager;
   FifoPlayer m_fifo_player;
   FifoRecorder m_fifo_recorder;
   Movie::MovieManager m_movie;
@@ -364,6 +366,11 @@ SystemTimers::SystemTimersManager& System::GetSystemTimers() const
   return m_impl->m_system_timers;
 }
 
+IOS::HLE::USBScanner& System::GetUSBScanner() const
+{
+  return m_impl->m_usb_scanner;
+}
+
 VertexShaderManager& System::GetVertexShaderManager() const
 {
   return m_impl->m_vertex_shader_manager;
@@ -379,9 +386,9 @@ VideoInterface::VideoInterfaceManager& System::GetVideoInterface() const
   return m_impl->m_video_interface;
 }
 
-VideoCommon::CustomAssetLoader& System::GetCustomAssetLoader() const
+VideoCommon::CustomResourceManager& System::GetCustomResourceManager() const
 {
-  return m_impl->m_custom_asset_loader;
+  return m_impl->m_custom_resource_manager;
 }
 
 IOS::LLE::ARMv5& System::GetARM9() const

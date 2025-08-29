@@ -354,8 +354,8 @@ void WiiIPC::RegisterMMIO(MMIO::Mapping* mmio, u32 base)
                  MMIO::ComplexWrite<u32>([](Core::System& system, u32, u32 val) {
                    auto& wii_ipc = system.GetWiiIPC();
                    wii_ipc.m_ppc_irq_masks = val;
-                   //  if (wii_ipc.m_ppc_irq_masks & INT_CAUSE_IPC_BROADWAY)  // wtf?
-                   //    wii_ipc.Reset();
+                   if (wii_ipc.m_ppc_irq_masks & INT_CAUSE_IPC_BROADWAY)  // wtf?
+                     wii_ipc.Reset();
                    if (system.GetIOS())
                    {
                      system.GetIOS()->UpdateIPC();

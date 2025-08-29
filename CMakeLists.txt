@@ -24,7 +24,7 @@ endif()
 
 # Minimum OS X version.
 # This is inserted into the Info.plist as well.
-set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15.0" CACHE STRING "")
+set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0.0" CACHE STRING "")
 
 set(CMAKE_USER_MAKE_RULES_OVERRIDE "${CMAKE_CURRENT_SOURCE_DIR}/CMake/FlagsOverride.cmake")
 
@@ -124,6 +124,11 @@ option(OPROFILING "Enable profiling" OFF)
 # TODO: Add DSPSpy
 option(DSPTOOL "Build dsptool" OFF)
 
+# RetroAchievements developer tools require Windows hooks
+if(WIN32)
+  option(RC_CLIENT_SUPPORTS_RAINTEGRATION "Enables RetroAchievements developer tools" ON)
+endif()
+
 # Enable SDL by default on operating systems that aren't Android.
 if(NOT ANDROID)
   option(ENABLE_SDL "Enables SDL as a generic controller backend" ON)
@@ -132,6 +137,8 @@ else()
 endif()
 
 if(APPLE)
+  enable_language(OBJC)
+  enable_language(OBJCXX)
   option(MACOS_USE_DEFAULT_SEARCH_PATH "Don't prioritize system library paths" OFF)
   option(SKIP_POSTPROCESS_BUNDLE "Skip postprocessing bundle for redistributability" OFF)
   # Enable adhoc code signing by default (otherwise makefile builds on ARM will not work)
@@ -144,6 +151,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   option(ENABLE_VTUNE "Enable Intel VTune integration for JIT code." OFF)
 
   if(NOT ANDROID)
+    option(ENABLE_HWDB "Enables the udev hardware database" ON)
     option(ENABLE_EVDEV "Enables the evdev controller backend" ON)
   endif()
 endif()
@@ -566,6 +574,16 @@ if(OPROFILING)
   endif()
 endif()
 
+if(ENABLE_HWDB)
+  find_package(LIBUDEV REQUIRED)
+  if(LIBUDEV_FOUND)
+    message(STATUS "libudev found, enabling hardware database")
+    add_definitions(-DHAVE_LIBUDEV=1)
+  else()
+    message(FATAL_ERROR "Couldn't find libudev. Can't build hardware database.\nDisable ENABLE_HWDB if you wish to build without hardware database support")
+  endif()
+endif()
+
 if(ENABLE_EVDEV)
   find_package(LIBUDEV REQUIRED)
   find_package(LIBEVDEV REQUIRED)
@@ -586,7 +604,7 @@ if(UNIX)
 endif()
 
 if(ENABLE_SDL)
-  dolphin_find_optional_system_library(SDL2 Externals/SDL 2.30.9)
+  dolphin_find_optional_system_library(SDL3 Externals/SDL 3.2.0)
 endif()
 
 if(ENABLE_ANALYTICS)
@@ -673,10 +691,10 @@ dolphin_make_imported_target_if_missing(LibLZMA::LibLZMA LIBLZMA)
 
 dolphin_find_optional_system_library_pkgconfig(ZSTD libzstd>=1.4.0 zstd::zstd Externals/zstd)
 
-add_subdirectory(Externals/zlib-ng)
+dolphin_find_optional_system_library_pkgconfig(ZLIB zlib>=1.3.1 ZLIB::ZLIB Externals/zlib-ng)
 
-dolphin_find_optional_system_library_pkgconfig(MINIZIP
-  "minizip>=4.0.4" minizip::minizip Externals/minizip-ng
+dolphin_find_optional_system_library_pkgconfig(minizip-ng
+  "minizip-ng>=4.0.4" minizip-ng::minizip-ng Externals/minizip-ng
 )
 
 dolphin_find_optional_system_library(LZO Externals/LZO)
@@ -767,6 +785,8 @@ add_subdirectory(Externals/FatFs)
 if (USE_RETRO_ACHIEVEMENTS)
 	add_subdirectory(Externals/rcheevos)
 endif()
+
+add_subdirectory(Externals/watcher)
 
 ########################################
 # Pre-build events: Define configuration variables and write SCM info header

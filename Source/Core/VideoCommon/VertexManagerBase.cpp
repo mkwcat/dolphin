@@ -459,13 +459,11 @@ void VertexManagerBase::Flush()
     // eventually simulate the behavior we have test cases for it.
     if (xfmem.numTexGen.numTexGens != bpmem.genMode.numtexgens)
     {
-      DolphinAnalytics::Instance().ReportGameQuirk(
-          GameQuirk::MISMATCHED_GPU_TEXGENS_BETWEEN_XF_AND_BP);
+      DolphinAnalytics::Instance().ReportGameQuirk(GameQuirk::MismatchedGPUTexGensBetweenXFAndBP);
     }
     if (xfmem.numChan.numColorChans != bpmem.genMode.numcolchans)
     {
-      DolphinAnalytics::Instance().ReportGameQuirk(
-          GameQuirk::MISMATCHED_GPU_COLORS_BETWEEN_XF_AND_BP);
+      DolphinAnalytics::Instance().ReportGameQuirk(GameQuirk::MismatchedGPUColorsBetweenXFAndBP);
     }
 
     return;
@@ -474,8 +472,8 @@ void VertexManagerBase::Flush()
 #if defined(_DEBUG) || defined(DEBUGFAST)
   PRIM_LOG("frame{}:\n texgen={}, numchan={}, dualtex={}, ztex={}, cole={}, alpe={}, ze={}",
            g_ActiveConfig.iSaveTargetId, xfmem.numTexGen.numTexGens, xfmem.numChan.numColorChans,
-           xfmem.dualTexTrans.enabled, bpmem.ztex2.op.Value(), bpmem.blendmode.colorupdate.Value(),
-           bpmem.blendmode.alphaupdate.Value(), bpmem.zmode.updateenable.Value());
+           xfmem.dualTexTrans.enabled, bpmem.ztex2.op.Value(), bpmem.blendmode.color_update.Value(),
+           bpmem.blendmode.alpha_update.Value(), bpmem.zmode.update_enable.Value());
 
   for (u32 i = 0; i < xfmem.numChan.numColorChans; ++i)
   {
@@ -644,9 +642,6 @@ void VertexManagerBase::Flush()
     // Same with GPU texture decoding, which uses compute shaders.
     g_texture_cache->BindTextures(used_textures, samplers);
 
-    if (PerfQueryBase::ShouldEmulate())
-      g_perf_query->EnableQuery(bpmem.zcontrol.early_ztest ? PQG_ZCOMP_ZCOMPLOC : PQG_ZCOMP);
-
     if (!skip)
     {
       UpdatePipelineConfig();
@@ -668,14 +663,8 @@ void VertexManagerBase::Flush()
       }
     }
 
-    // Track the total emulated state draws
-    INCSTAT(g_stats.this_frame.num_draw_calls);
-
     // Even if we skip the draw, emulated state should still be impacted
     OnDraw();
-
-    if (PerfQueryBase::ShouldEmulate())
-      g_perf_query->DisableQuery(bpmem.zcontrol.early_ztest ? PQG_ZCOMP_ZCOMPLOC : PQG_ZCOMP);
 
     // The EFB cache is now potentially stale.
     g_framebuffer_manager->FlagPeekCacheAsOutOfDate();
@@ -1098,7 +1087,16 @@ void VertexManagerBase::RenderDrawCall(
     base_vertex <<= 2;
   }
 
+  if (PerfQueryBase::ShouldEmulate())
+    g_perf_query->EnableQuery(bpmem.zcontrol.early_ztest ? PQG_ZCOMP_ZCOMPLOC : PQG_ZCOMP);
+
   DrawCurrentBatch(base_index, m_index_generator.GetIndexLen(), base_vertex);
+
+  // Track the total emulated state draws
+  INCSTAT(g_stats.this_frame.num_draw_calls);
+
+  if (PerfQueryBase::ShouldEmulate())
+    g_perf_query->DisableQuery(bpmem.zcontrol.early_ztest ? PQG_ZCOMP_ZCOMPLOC : PQG_ZCOMP);
 }
 
 const AbstractPipeline* VertexManagerBase::GetCustomPipeline(

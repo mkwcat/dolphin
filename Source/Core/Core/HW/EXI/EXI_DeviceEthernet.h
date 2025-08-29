@@ -216,7 +216,7 @@ class CEXIETHERNET : public IEXIDevice
 {
 public:
   CEXIETHERNET(Core::System& system, BBADeviceType type);
-  virtual ~CEXIETHERNET();
+  ~CEXIETHERNET() override;
   void SetCS(int cs) override;
   bool IsPresent() const override;
   bool IsInterruptSet() override;
@@ -269,7 +269,7 @@ private:
 
     u8 revision_id = 0;  // 0xf0
     u8 interrupt_mask = 0;
-    u8 interrupt = 0;
+    std::atomic<u8> interrupt = 0;
     u16 device_id = 0xD107;
     u8 acstart = 0x4E;
     u32 hash_challenge = 0;
@@ -281,7 +281,7 @@ private:
   {
     u32 word;
 
-    inline void set(u32 const next_page, u32 const packet_length, u32 const status)
+    void set(u32 const next_page, u32 const packet_length, u32 const status)
     {
       word = 0;
       word |= (status & 0xff) << 24;
@@ -290,10 +290,7 @@ private:
     }
   };
 
-  inline u16 page_ptr(int const index) const
-  {
-    return ((u16)mBbaMem[index + 1] << 8) | mBbaMem[index];
-  }
+  u16 page_ptr(int const index) const { return ((u16)mBbaMem[index + 1] << 8) | mBbaMem[index]; }
 
   bool IsMXCommand(u32 const data);
   bool IsWriteCommand(u32 const data);

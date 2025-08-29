@@ -112,6 +112,17 @@ jclass GetCoreDeviceControlClass();
 jfieldID GetCoreDeviceControlPointer();
 jmethodID GetCoreDeviceControlConstructor();
 
+jclass GetInputDetectorClass();
+jfieldID GetInputDetectorPointer();
+
+jclass GetPermissionHandlerClass();
+jmethodID GetPermissionHandlerHasRecordAudioPermission();
+jmethodID GetPermissionHandlerRequestRecordAudioPermission();
+
 jmethodID GetRunnableRun();
+
+jclass GetAudioUtilsClass();
+jmethodID GetAudioUtilsGetSampleRate();
+jmethodID GetAudioUtilsGetFramesPerBuffer();
 
 }  // namespace IDCache

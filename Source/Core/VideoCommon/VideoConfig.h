@@ -180,6 +180,7 @@ struct BackendInfo
   bool bSupportsVSLinePointExpand = false;
   bool bSupportsGLLayerInFS = true;
   bool bSupportsHDROutput = false;
+  bool bSupportsUnrestrictedDepthRange = false;
 };
 
 extern BackendInfo g_backend_info;
@@ -190,6 +191,7 @@ struct VideoConfig final
   VideoConfig() = default;
   void Refresh();
   void VerifyValidity();
+  static void Shutdown();
 
   // General
   bool bVSync = false;

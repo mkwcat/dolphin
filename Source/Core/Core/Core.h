@@ -15,6 +15,7 @@
 #include <string_view>
 
 #include "Common/CommonTypes.h"
+#include "Common/Functional.h"
 
 struct BootParameters;
 struct WindowSystemInfo;
@@ -152,7 +153,7 @@ bool WantsDeterminism();
 
 // [NOT THREADSAFE] For use by Host only
 void SetState(Core::System& system, State state, bool report_state_change = true,
-              bool initial_execution_state = false);
+              bool override_achievement_restrictions = false);
 State GetState(Core::System& system);
 
 void SaveScreenShot();
@@ -166,7 +167,8 @@ void OnFrameEnd(Core::System& system);
 
 // Run a function on the CPU thread, asynchronously.
 // This is only valid to call from the host thread, since it uses PauseAndLock() internally.
-void RunOnCPUThread(Core::System& system, std::function<void()> function, bool wait_for_completion);
+void RunOnCPUThread(Core::System& system, Common::MoveOnlyFunction<void()> function,
+                    bool wait_for_completion);
 
 // for calling back into UI code without introducing a dependency on it in core
 using StateChangedCallbackFunc = std::function<void(Core::State)>;
@@ -174,7 +176,7 @@ using StateChangedCallbackFunc = std::function<void(Core::State)>;
 int AddOnStateChangedCallback(StateChangedCallbackFunc callback);
 // Also invalidates the handle
 bool RemoveOnStateChangedCallback(int* handle);
-void CallOnStateChangedCallbacks(Core::State state);
+void NotifyStateChanged(Core::State state);
 
 // Run on the Host thread when the factors change. [NOT THREADSAFE]
 void UpdateWantDeterminism(Core::System& system, bool initial = false);

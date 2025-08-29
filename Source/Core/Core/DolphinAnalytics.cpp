@@ -173,7 +173,7 @@ constexpr std::array GAME_QUIRKS_NAMES{
     "invalid-texture-coordinate-component-format",
     "invalid-color-component-format",
 };
-static_assert(GAME_QUIRKS_NAMES.size() == static_cast<u32>(GameQuirk::COUNT),
+static_assert(GAME_QUIRKS_NAMES.size() == static_cast<u32>(GameQuirk::Count),
               "Game quirks names and enum definition are out of sync.");
 
 void DolphinAnalytics::ReportGameQuirk(GameQuirk quirk)
@@ -365,6 +365,8 @@ void DolphinAnalytics::MakePerGameBuilder()
   builder.AddData("cfg-audio-backend", Config::Get(Config::MAIN_AUDIO_BACKEND));
   builder.AddData("cfg-oc-enable", Config::Get(Config::MAIN_OVERCLOCK_ENABLE));
   builder.AddData("cfg-oc-factor", Config::Get(Config::MAIN_OVERCLOCK));
+  builder.AddData("cfg-vi-oc-enable", Config::Get(Config::MAIN_VI_OVERCLOCK_ENABLE));
+  builder.AddData("cfg-vi-oc-factor", Config::Get(Config::MAIN_VI_OVERCLOCK));
   builder.AddData("cfg-render-to-main", Config::Get(Config::MAIN_RENDER_TO_MAIN));
   if (g_video_backend)
   {

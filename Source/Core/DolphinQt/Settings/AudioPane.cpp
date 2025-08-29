@@ -3,6 +3,10 @@
 
 #include "DolphinQt/Settings/AudioPane.h"
 
+#include <string>
+#include <utility>
+#include <vector>
+
 #include <QFontMetrics>
 #include <QFormLayout>
 #include <QGridLayout>
@@ -11,6 +15,7 @@
 #include <QLabel>
 #include <QRadioButton>
 #include <QSpacerItem>
+#include <QString>
 #include <QVBoxLayout>
 
 #include "AudioCommon/AudioCommon.h"
@@ -27,6 +32,11 @@
 
 #include "DolphinQt/Config/SettingsWindow.h"
 #include "DolphinQt/Settings.h"
+
+static QString GetVolumeLabelText(int volume_level)
+{
+  return QWidget::tr("%1%").arg(volume_level);
+}
 
 AudioPane::AudioPane()
 {
@@ -62,16 +72,26 @@ void AudioPane::CreateWidgets()
   dsp_layout->addWidget(m_dsp_combo, Qt::AlignLeft);
 
   auto* volume_box = new QGroupBox(tr("Volume"));
-  auto* volume_layout = new QVBoxLayout;
+  auto* volume_layout = new QVBoxLayout{volume_box};
+
   m_volume_slider = new ConfigSlider(0, 100, Config::MAIN_AUDIO_VOLUME);
-  m_volume_indicator = new QLabel(tr("%1 %").arg(m_volume_slider->value()));
-
-  volume_box->setLayout(volume_layout);
-
   m_volume_slider->setOrientation(Qt::Vertical);
 
+  // Volume indicator text label.
+  m_volume_indicator = new QLabel;
   m_volume_indicator->setAlignment(Qt::AlignVCenter | Qt::AlignHCenter);
-  m_volume_indicator->setFixedWidth(QFontMetrics(font()).boundingRect(tr("%1 %").arg(100)).width());
+  auto update_volume_label = [this]() {
+    m_volume_indicator->setText(GetVolumeLabelText(m_volume_slider->value()));
+  };
+  update_volume_label();
+  connect(m_volume_slider, &QSlider::valueChanged, this, std::move(update_volume_label));
+
+  const QFontMetrics font_metrics{font()};
+  const int label_width = font_metrics.boundingRect(GetVolumeLabelText(100)).width();
+  // Ensure the label is at least as wide as the QGroupBox title.
+  // This prevents [-Volume] title uglyness on Windows.
+  const int title_width = font_metrics.boundingRect(volume_box->title()).width();
+  m_volume_indicator->setFixedWidth(std::max(label_width, title_width));
 
   volume_layout->addWidget(m_volume_slider, 0, Qt::AlignHCenter);
   volume_layout->addWidget(m_volume_indicator, 0, Qt::AlignHCenter);
@@ -80,8 +100,18 @@ void AudioPane::CreateWidgets()
   auto* backend_layout = new QFormLayout;
   backend_box->setLayout(backend_layout);
   m_backend_label = new QLabel(tr("Audio Backend:"));
-  m_backend_combo =
-      new ConfigStringChoice(AudioCommon::GetSoundBackends(), Config::MAIN_AUDIO_BACKEND);
+
+  {
+    std::vector<std::string> backends = AudioCommon::GetSoundBackends();
+    std::vector<std::pair<QString, QString>> translated_backends;
+    translated_backends.reserve(backends.size());
+    for (const std::string& backend : backends)
+    {
+      translated_backends.emplace_back(tr(backend.c_str()), QString::fromStdString(backend));
+    }
+    m_backend_combo = new ConfigStringChoice(translated_backends, Config::MAIN_AUDIO_BACKEND);
+  }
+
   m_dolby_pro_logic = new ConfigBool(tr("Dolby Pro Logic II Decoder"), Config::MAIN_DPL2_DECODER);
   m_dolby_quality_label = new QLabel(tr("Decoding Quality:"));
 
@@ -126,23 +156,54 @@ void AudioPane::CreateWidgets()
 
   dsp_box->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
-  auto* misc_box = new QGroupBox(tr("Miscellaneous Settings"));
-  auto* misc_layout = new QGridLayout;
-  misc_box->setLayout(misc_layout);
+  auto* playback_box = new QGroupBox(tr("Audio Playback Settings"));
+  auto* playback_layout = new QGridLayout;
+  playback_box->setLayout(playback_layout);
+
+  ConfigSlider* audio_buffer_size = new ConfigSlider(16, 512, Config::MAIN_AUDIO_BUFFER_SIZE, 8);
+  QLabel* audio_buffer_size_label = new QLabel;
+
+  audio_buffer_size->setSingleStep(8);
+  audio_buffer_size->setPageStep(8);
+
+  audio_buffer_size->SetDescription(
+      tr("Controls the number of audio samples buffered."
+         " Lower values reduce latency but may cause more crackling or stuttering."
+         "<br><br><dolphin_emphasis>If unsure, set this to 80 ms.</dolphin_emphasis>"));
+
+  // Connect the slider to update the value label live
+  connect(audio_buffer_size, &QSlider::valueChanged, this, [=](int value) {
+    int stepped_value = (value / 8) * 8;
+    audio_buffer_size->setValue(stepped_value);
+    audio_buffer_size_label->setText(tr("%1 ms").arg(stepped_value));
+  });
+
+  // Set initial value display
+  audio_buffer_size_label->setText(tr("%1 ms").arg(audio_buffer_size->value()));
+  audio_buffer_size_label->setFixedWidth(QFontMetrics(font()).boundingRect(tr(" 000 ms")).width());
 
   m_audio_fill_gaps = new ConfigBool(tr("Fill Audio Gaps"), Config::MAIN_AUDIO_FILL_GAPS);
 
   m_speed_up_mute_enable = new ConfigBool(tr("Mute When Disabling Speed Limit"),
                                           Config::MAIN_AUDIO_MUTE_ON_DISABLED_SPEED_LIMIT);
 
-  misc_layout->addWidget(m_audio_fill_gaps, 0, 0, 1, 1);
-  misc_layout->addWidget(m_speed_up_mute_enable, 1, 0, 1, 1);
+  // Create a horizontal layout for the slider + value label
+  auto* buffer_layout = new QHBoxLayout;
+  buffer_layout->addWidget(new ConfigSliderLabel(tr("Audio Buffer Size:"), audio_buffer_size));
+  buffer_layout->addWidget(audio_buffer_size);
+  buffer_layout->addWidget(audio_buffer_size_label);
+
+  playback_layout->addLayout(buffer_layout, 0, 0);
+  playback_layout->addWidget(m_audio_fill_gaps, 1, 0);
+  playback_layout->addWidget(m_speed_up_mute_enable, 2, 0);
+  playback_layout->setRowStretch(3, 1);
+  playback_box->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
   auto* const main_vbox_layout = new QVBoxLayout;
 
   main_vbox_layout->addWidget(dsp_box);
   main_vbox_layout->addWidget(backend_box);
-  main_vbox_layout->addWidget(misc_box);
+  main_vbox_layout->addWidget(playback_box);
 
   m_main_layout = new QHBoxLayout;
   m_main_layout->addLayout(main_vbox_layout);
@@ -157,12 +218,14 @@ void AudioPane::ConnectWidgets()
   connect(m_backend_combo, &QComboBox::currentIndexChanged, this, &AudioPane::OnBackendChanged);
   connect(m_dolby_pro_logic, &ConfigBool::toggled, this, &AudioPane::OnDspChanged);
   connect(m_dsp_combo, &ConfigComplexChoice::currentIndexChanged, this, &AudioPane::OnDspChanged);
-  connect(m_volume_slider, &QSlider::valueChanged, this, [this](int value) {
-    m_volume_indicator->setText(tr("%1%").arg(value));
-    AudioCommon::UpdateSoundStream(Core::System::GetInstance());
-  });
-  connect(m_latency_slider, &QSlider::valueChanged, this,
-          [this](int value) { m_latency_label->setText(tr("Latency: %1 ms").arg(value)); });
+  connect(m_volume_slider, &QSlider::valueChanged, this,
+          [] { AudioCommon::UpdateSoundStream(Core::System::GetInstance()); });
+
+  if (m_latency_control_supported)
+  {
+    connect(m_latency_slider, &QSlider::valueChanged, this,
+            [this](int value) { m_latency_label->setText(tr("Latency: %1 ms").arg(value)); });
+  }
 }
 
 void AudioPane::OnDspChanged()
@@ -242,9 +305,6 @@ void AudioPane::AddDescriptions()
   static const char TR_AUDIO_BACKEND_DESCRIPTION[] =
       QT_TR_NOOP("Selects which audio API to use internally.<br><br><dolphin_emphasis>If unsure, "
                  "select %1.</dolphin_emphasis>");
-  static const char TR_WASAPI_DEVICE_DESCRIPTION[] =
-      QT_TR_NOOP("Selects an output device to use.<br><br><dolphin_emphasis>If unsure, select "
-                 "Default Device.</dolphin_emphasis>");
   static const char TR_LATENCY_SLIDER_DESCRIPTION[] = QT_TR_NOOP(
       "Sets the audio latency in milliseconds. Higher values may reduce audio crackling. Certain "
       "backends only.<br><br><dolphin_emphasis>If unsure, leave this at 20 ms.</dolphin_emphasis>");
@@ -279,9 +339,13 @@ void AudioPane::AddDescriptions()
   m_dolby_quality_combo->SetDescription(tr(TR_DOLBY_OPTIONS_DESCRIPTION));
 
 #ifdef _WIN32
+  static const char TR_WASAPI_DEVICE_DESCRIPTION[] =
+      QT_TR_NOOP("Selects an output device to use.<br><br><dolphin_emphasis>If unsure, select "
+                 "Default Device.</dolphin_emphasis>");
   m_wasapi_device_combo->SetTitle(tr("Output Device"));
   m_wasapi_device_combo->SetDescription(tr(TR_WASAPI_DEVICE_DESCRIPTION));
 #endif
+
   m_volume_slider->SetTitle(tr("Volume"));
   m_volume_slider->SetDescription(tr(TR_VOLUME_DESCRIPTION));
 
